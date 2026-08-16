@@ -18,9 +18,6 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
-    "@mavibase/core": "workspace:*"
-  },
   "devDependencies": {
     "typescript": "^5.5.0"
   }

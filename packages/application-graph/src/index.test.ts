@@ -1,8 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { version } from "./index.js";
+import { buildGraph, version } from "./index.js";
+import { defineApp } from "@mavibase/core";
 
 describe("application-graph", () => {
   it("exports a version", () => {
     expect(version).toBe("0.1.0");
+  });
+
+  it("builds an empty graph from a definition", () => {
+    const app = defineApp({
+      models: {},
+    });
+
+    const graph = buildGraph(app);
+
+    expect(graph.nodes).toEqual([]);
+    expect(graph.edges).toEqual([]);
   });
 });
