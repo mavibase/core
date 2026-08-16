@@ -2,13 +2,23 @@
   "name": "mavibase",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "Mavibase Core - a TypeScript-first full-stack application development system",
   "scripts": {
     "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
-    "typescript": "^5.5.0"
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.3.0",
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^3.0.0"
   },
   "engines": {
     "node": ">=20"
