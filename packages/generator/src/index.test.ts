@@ -1,8 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { version } from "./index.js";
+import { generate, generateFromDefinition, version } from "./index.js";
+import { defineApp } from "@mavibase/core";
 
 describe("generator", () => {
   it("exports a version", () => {
     expect(version).toBe("0.1.0");
+  });
+
+  it("generates from an application graph", () => {
+    const result = generate({
+      nodes: [],
+      edges: [],
+    });
+
+    expect(result.files).toEqual([]);
+  });
+
+  it("generates from an application definition", () => {
+    const app = defineApp({
+      models: {},
+    });
+
+    const result = generateFromDefinition(app);
+
+    expect(result.files).toEqual([]);
   });
 });
