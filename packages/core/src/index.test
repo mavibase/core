@@ -1,0 +1,16 @@
+import { describe, expect, it } from "vitest";
+import { defineApp, version } from "./index.js";
+
+describe("core", () => {
+  it("exports a version", () => {
+    expect(version).toBe("0.1.0");
+  });
+
+  it("defines an application", () => {
+    const app = defineApp({
+      models: {},
+    });
+
+    expect(app).toEqual({ models: {} });
+  });
+});
