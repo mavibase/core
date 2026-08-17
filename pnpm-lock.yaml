@@ -60,6 +60,10 @@ importers:
         version: 5.9.3
 
   packages/core:
+    dependencies:
+      '@mavibase/config':
+        specifier: workspace:*
+        version: link:../config
     devDependencies:
       typescript:
         specifier: ^5.5.0

@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+ 
+ import { describe, expect, it } from "vitest";
 import { buildGraph, version } from "./index.js";
 import { defineApp } from "@mavibase/core";
 
@@ -9,7 +10,13 @@ describe("application-graph", () => {
 
   it("builds an empty graph from a definition", () => {
     const app = defineApp({
-      models: {},
+      name: "my-app",
+      version: "1.0.0",
+      environment: "development",
+      stack: {
+        language: "typescript",
+        runtime: "node",
+      },
     });
 
     const graph = buildGraph(app);

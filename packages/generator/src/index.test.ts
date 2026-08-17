@@ -18,7 +18,13 @@ describe("generator", () => {
 
   it("generates from an application definition", () => {
     const app = defineApp({
-      models: {},
+      name: "my-app",
+      version: "1.0.0",
+      environment: "development",
+      stack: {
+        language: "typescript",
+        runtime: "node",
+      },
     });
 
     const result = generateFromDefinition(app);
