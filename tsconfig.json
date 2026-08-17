@@ -16,6 +16,13 @@
     "noFallthroughCasesInSwitch": true,
     "exactOptionalPropertyTypes": true,
     "isolatedModules": true,
-    "verbatimModuleSyntax": true
+    "verbatimModuleSyntax": true,
+    "baseUrl": ".",
+    "paths": {
+      "@mavibase/core": ["packages/core/src/index.ts"],
+      "@mavibase/application-graph": ["packages/application-graph/src/index.ts"],
+      "@mavibase/generator": ["packages/generator/src/index.ts"],
+      "@mavibase/config": ["packages/config/src/index.ts"]
+    }
   }
 }
