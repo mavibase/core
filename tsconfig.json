@@ -17,6 +17,7 @@
     "exactOptionalPropertyTypes": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
+    "types": ["node"],
     "baseUrl": ".",
     "paths": {
       "@mavibase/core": ["packages/core/src/index.ts"],
