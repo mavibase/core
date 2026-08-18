@@ -204,18 +204,79 @@ export const field = {
   },
 };
 
+/** Mavibase relationship types */
+export type RelationshipType =
+  | "one-to-one"
+  | "one-to-many"
+  | "many-to-one"
+  | "many-to-many";
+
+/** A relationship definition describes a link to another model */
+export interface RelationshipDefinition {
+  type: RelationshipType;
+
+  /** Target model the relationship points to */
+  model?: string;
+}
+
+/** A relationship with a chainable target helper */
+export interface ModifiableRelationship extends RelationshipDefinition {
+  to(model: string): ModifiableRelationship;
+}
+
+/** Relationship helper methods live on the prototype so structural equality ignores them */
+const relationshipPrototype = {
+  to(this: ModifiableRelationship, model: string): ModifiableRelationship {
+    return createRelationship(this.type, model);
+  },
+};
+
+/** Build a relationship from a type and optional target model */
+function createRelationship(
+  type: RelationshipType,
+  model?: string,
+): ModifiableRelationship {
+  const definition = Object.create(
+    relationshipPrototype,
+  ) as ModifiableRelationship;
+
+  definition.type = type;
+
+  if (model) {
+    definition.model = model;
+  }
+
+  return definition;
+}
+
+/** Factory for creating relationship definitions */
+export const relationship = {
+  oneToOne(): ModifiableRelationship {
+    return createRelationship("one-to-one");
+  },
+  oneToMany(): ModifiableRelationship {
+    return createRelationship("one-to-many");
+  },
+  manyToOne(): ModifiableRelationship {
+    return createRelationship("many-to-one");
+  },
+  manyToMany(): ModifiableRelationship {
+    return createRelationship("many-to-many");
+  },
+};
+
 export interface ModelDefinition {
   /** Stable identifier for the model */
   id: string;
 
-  /** Human-readable model name */
+  /** model name */
   name: string;
 
   /** Model fields */
   fields?: Record<string, FieldDefinition>;
 
   /** Model relationships */
-  relationships?: Record<string, unknown>;
+  relationships?: Record<string, RelationshipDefinition>;
 
   /** Database indexes */
   indexes?: unknown[];
@@ -231,7 +292,7 @@ export interface DefineModelInput {
   name: string;
   id?: string;
   fields?: Record<string, FieldDefinition>;
-  relationships?: Record<string, unknown>;
+  relationships?: Record<string, RelationshipDefinition>;
   indexes?: unknown[];
   constraints?: unknown[];
   metadata?: Record<string, unknown>;
@@ -273,6 +334,222 @@ export function defineModel(input: DefineModelInput): ModelDefinition {
     metadata: input.metadata ?? {},
   };
 }
+export interface ValidationIssue {
+  path: string;
+  /**Description of the problem */
+  message: string;
+}
+
+const VALID_FIELD_TYPES: readonly string[] = [
+  "string",
+  "integer",
+  "float",
+  "decimal",
+  "boolean",
+  "uuid",
+  "datetime",
+  "json",
+];
+
+const VALID_RELATIONSHIP_TYPES: readonly string[] = [
+  "one-to-one",
+  "one-to-many",
+  "many-to-one",
+  "many-to-many",
+];
+
+/** Validate a definition and return any issues found */
+export function validateDefinition(
+  definition: unknown,
+): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+
+  if (!definition || typeof definition !== "object") {
+    return issues;
+  }
+
+  const candidate = definition as Record<string, unknown>;
+  const rawModels = candidate["models"];
+
+  const models = Array.isArray(rawModels) ? rawModels : [];
+  const modelNames = new Set<string>();
+
+  for (const model of models) {
+    if (model && typeof model === "object") {
+      const modelName = (model as Record<string, unknown>)["name"];
+
+      if (typeof modelName === "string") {
+        modelNames.add(modelName);
+      }
+    }
+  }
+
+  const seen = new Set<string>();
+
+  for (const model of models) {
+    if (!model || typeof model !== "object") {
+      continue;
+    }
+
+    const modelObj = model as Record<string, unknown>;
+    const modelName = modelObj["name"];
+
+    if (typeof modelName !== "string") {
+      continue;
+    }
+
+    if (seen.has(modelName)) {
+      issues.push({
+        path: `models.${modelName}`,
+        message: `Duplicate model name: "${modelName}". Model names must be unique.`,
+      });
+    }
+
+    seen.add(modelName);
+  }
+
+  for (const model of models) {
+    if (!model || typeof model !== "object") {
+      continue;
+    }
+
+    const modelObj = model as Record<string, unknown>;
+    const modelName = modelObj["name"];
+
+    if (typeof modelName !== "string") {
+      continue;
+    }
+
+    const fields = modelObj["fields"];
+    const fieldEntries =
+      fields && typeof fields === "object"
+        ? Object.entries(fields as Record<string, unknown>)
+        : [];
+
+    for (const [name, fieldDef] of fieldEntries) {
+      const fieldType =
+        fieldDef &&
+        typeof fieldDef === "object" &&
+        (fieldDef as Record<string, unknown>)["type"];
+
+      if (!VALID_FIELD_TYPES.includes(String(fieldType))) {
+        issues.push({
+          path: `models.${modelName}.fields.${name}.type`,
+          message: `Invalid field type for "${modelName}.${name}".`,
+        });
+      }
+    }
+
+    const relationships = modelObj["relationships"];
+    const relationshipEntries =
+      relationships && typeof relationships === "object"
+        ? Object.entries(relationships as Record<string, unknown>)
+        : [];
+
+    for (const [name, relDef] of relationshipEntries) {
+      const relObj =
+        relDef && typeof relDef === "object"
+          ? (relDef as Record<string, unknown>)
+          : undefined;
+
+      const relType =
+        relObj &&
+        typeof relObj === "object" &&
+        (relObj as Record<string, unknown>)["type"];
+
+      if (!VALID_RELATIONSHIP_TYPES.includes(String(relType))) {
+        issues.push({
+          path: `models.${modelName}.relationships.${name}.type`,
+          message: `Invalid relationship type for "${modelName}.${name}".`,
+        });
+      }
+
+      const targetModel = relObj && relObj["model"];
+
+      if (typeof targetModel === "string" && !modelNames.has(targetModel)) {
+        issues.push({
+          path: `models.${modelName}.relationships.${name}.model`,
+          message: `Relationship "${modelName}.${name}" references unknown model "${targetModel}".`,
+        });
+      }
+    }
+  }
+
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const stack: string[] = [];
+
+  const visit = (modelName: string): void => {
+    if (visiting.has(modelName)) {
+      const cycleStart = stack.indexOf(modelName);
+
+      if (cycleStart >= 0) {
+        const cycle = [...stack.slice(cycleStart), modelName].join(" -> ");
+
+        issues.push({
+          path: "models",
+          message: `Circular relationship dependency: ${cycle}.`,
+        });
+      }
+
+      return;
+    }
+
+    if (visited.has(modelName)) {
+      return;
+    }
+
+    visiting.add(modelName);
+    stack.push(modelName);
+
+    const model = models.find((candidate) => {
+      if (!candidate || typeof candidate !== "object") {
+        return false;
+      }
+
+      return (candidate as Record<string, unknown>)["name"] === modelName;
+    });
+
+    if (model && typeof model === "object") {
+      const modelObj = model as Record<string, unknown>;
+      const relationships = modelObj["relationships"];
+
+      if (relationships && typeof relationships === "object") {
+        for (const relDef of Object.values(
+          relationships as Record<string, unknown>,
+        )) {
+          const relObj =
+            relDef && typeof relDef === "object"
+              ? (relDef as Record<string, unknown>)
+              : undefined;
+
+          const targetModel = relObj && relObj["model"];
+
+          // self-referencing relationships are a valid pattern
+          if (typeof targetModel === "string" && targetModel !== modelName) {
+            visit(targetModel);
+          }
+        }
+      }
+    }
+
+    stack.pop();
+    visiting.delete(modelName);
+    visited.add(modelName);
+  };
+
+  for (const model of models) {
+    if (model && typeof model === "object") {
+      const modelName = (model as Record<string, unknown>)["name"];
+
+      if (typeof modelName === "string") {
+        visit(modelName);
+      }
+    }
+  }
+
+  return issues;
+}
 
 /** Define a Mavibase application */
 export function defineApp(
@@ -288,23 +565,19 @@ export function defineApp(
     );
   }
 
-  const models = definition.models ?? [];
+  const issues = validateDefinition(definition);
 
-  const seen = new Set<string>();
-
-  for (const model of models) {
-    if (seen.has(model.name)) {
-      throw new Error(
-        `Duplicate model name: "${model.name}". Model names must be unique.`,
-      );
-    }
-
-    seen.add(model.name);
+  if (issues.length > 0) {
+    throw new Error(
+      `Invalid application definition: ${issues
+        .map((issue) => issue.message)
+        .join(" ")}`,
+    );
   }
 
   return {
     ...definition,
-    models,
+    models: definition.models ?? [],
     definitions: definition.definitions ?? {},
   };
 }
