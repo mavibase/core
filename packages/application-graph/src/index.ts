@@ -2,45 +2,137 @@ import type { ApplicationDefinition } from "@mavibase/core";
 
 export const version = "0.1.0";
 
-/**
- * Represents a node in the application graph.
- *
- * Nodes will represent models, fields, APIs, and other application
- * components in later phases.
- */
+export type GraphNodeType =
+  | "application"
+  | "model"
+  | "field"
+  | "relationship";
+
 export interface GraphNode {
   id: string;
-  type: string;
+  type: GraphNodeType;
+  data?: Record<string, unknown>;
 }
 
-/**
- * Represents a directional edge between two graph nodes.
- */
 export interface GraphEdge {
   from: string;
   to: string;
   type: string;
+  data?: Record<string, unknown>;
 }
 
-/**
- * A machine-readable representation of an application.
- *
- * Contains all nodes and edges that describe the structure of an application.
- */
 export interface ApplicationGraph {
+  name: string;
+  version: string;
   nodes: GraphNode[];
   edges: GraphEdge[];
 }
 
-/**
- * Build an application graph from an application definition.
- *
- * The implementation will be built out in later phases. Currently returns
- * an empty graph.
- */
-export function buildGraph(_definition: ApplicationDefinition): ApplicationGraph {
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+export function buildGraph(definition: ApplicationDefinition): ApplicationGraph {
+  const nodes: GraphNode[] = [];
+  const edges: GraphEdge[] = [];
+
+  const appId = `app:${slugify(definition.name)}`;
+
+  nodes.push({
+    id: appId,
+    type: "application",
+    data: {
+      name: definition.name,
+      version: definition.version,
+      environment: definition.environment,
+    },
+  });
+
+  const models = definition.models ?? [];
+
+  for (const model of models) {
+    const modelId = `model:${model.id}`;
+
+    nodes.push({
+      id: modelId,
+      type: "model",
+      data: {
+        name: model.name,
+      },
+    });
+
+    edges.push({
+      from: appId,
+      to: modelId,
+      type: "contains",
+    });
+
+    const fields = model.fields ?? {};
+
+    for (const [fieldName, fieldDef] of Object.entries(fields)) {
+      const fieldId = `field:${model.id}.${fieldName}`;
+
+      nodes.push({
+        id: fieldId,
+        type: "field",
+        data: {
+          name: fieldName,
+          type: fieldDef.type,
+          modifiers: fieldDef.modifiers,
+        },
+      });
+
+      edges.push({
+        from: modelId,
+        to: fieldId,
+        type: "has-field",
+      });
+    }
+
+    const relationships = model.relationships ?? {};
+
+    for (const [relName, relDef] of Object.entries(relationships)) {
+      const relId = `relationship:${model.id}.${relName}`;
+
+      nodes.push({
+        id: relId,
+        type: "relationship",
+        data: {
+          name: relName,
+          type: relDef.type,
+          model: relDef.model,
+        },
+      });
+
+      edges.push({
+        from: modelId,
+        to: relId,
+        type: "has-relationship",
+      });
+
+      if (relDef.model) {
+        const targetModel = models.find(
+          (candidate) => candidate.name === relDef.model,
+        );
+
+        if (targetModel) {
+          edges.push({
+            from: relId,
+            to: `model:${targetModel.id}`,
+            type: "targets",
+          });
+        }
+      }
+    }
+  }
+
   return {
-    nodes: [],
-    edges: [],
+    name: definition.name,
+    version: definition.version,
+    nodes,
+    edges,
   };
 }
