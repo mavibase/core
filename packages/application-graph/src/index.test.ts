@@ -1,10 +1,48 @@
 import { describe, expect, it } from "vitest";
-import { buildGraph, createNode, version } from "./index.js";
+import { buildGraph, createEdge, createNode, version } from "./index.js";
 import { defineApp, defineModel, field, relationship } from "@mavibase/core";
 
 describe("application-graph", () => {
   it("exports a version", () => {
     expect(version).toBe("0.1.0");
+  });
+
+  describe("createEdge", () => {
+    it("creates an edge without data", () => {
+      expect(createEdge("app:my-app", "model:user", "contains")).toEqual({
+        from: "app:my-app",
+        to: "model:user",
+        type: "contains",
+      });
+    });
+
+    it("creates an edge with data", () => {
+      expect(
+        createEdge("route:users.list", "model:user", "uses", {
+          readonly: true,
+        }),
+      ).toEqual({
+        from: "route:users.list",
+        to: "model:user",
+        type: "uses",
+        data: { readonly: true },
+      });
+    });
+
+    it("supports every graph edge type", () => {
+      expect(createEdge("a", "b", "contains").type).toBe("contains");
+      expect(createEdge("a", "b", "has-field").type).toBe("has-field");
+      expect(createEdge("a", "b", "has-relationship").type).toBe(
+        "has-relationship",
+      );
+      expect(createEdge("a", "b", "targets").type).toBe("targets");
+      expect(createEdge("a", "b", "uses").type).toBe("uses");
+      expect(createEdge("a", "b", "validates").type).toBe("validates");
+      expect(createEdge("a", "b", "protects").type).toBe("protects");
+      expect(createEdge("a", "b", "triggers").type).toBe("triggers");
+      expect(createEdge("a", "b", "implements").type).toBe("implements");
+      expect(createEdge("a", "b", "connects").type).toBe("connects");
+    });
   });
 
   describe("createNode", () => {

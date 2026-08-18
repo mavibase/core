@@ -15,6 +15,18 @@ export type GraphNodeType =
   | "service"
   | "integration";
 
+export type GraphEdgeType =
+  | "contains"
+  | "has-field"
+  | "has-relationship"
+  | "targets"
+  | "uses"
+  | "validates"
+  | "protects"
+  | "triggers"
+  | "implements"
+  | "connects";
+
 export interface GraphNode {
   id: string;
   type: GraphNodeType;
@@ -24,7 +36,7 @@ export interface GraphNode {
 export interface GraphEdge {
   from: string;
   to: string;
-  type: string;
+  type: GraphEdgeType;
   data?: Record<string, unknown>;
 }
 
@@ -42,6 +54,20 @@ export function createNode(
 ): GraphNode {
   return {
     id,
+    type,
+    ...(data ? { data } : {}),
+  };
+}
+
+export function createEdge(
+  from: string,
+  to: string,
+  type: GraphEdgeType,
+  data?: Record<string, unknown>,
+): GraphEdge {
+  return {
+    from,
+    to,
     type,
     ...(data ? { data } : {}),
   };
@@ -79,11 +105,7 @@ export function buildGraph(definition: ApplicationDefinition): ApplicationGraph 
       }),
     );
 
-    edges.push({
-      from: appId,
-      to: modelId,
-      type: "contains",
-    });
+    edges.push(createEdge(appId, modelId, "contains"));
 
     const fields = model.fields ?? {};
 
@@ -98,11 +120,7 @@ export function buildGraph(definition: ApplicationDefinition): ApplicationGraph 
         }),
       );
 
-      edges.push({
-        from: modelId,
-        to: fieldId,
-        type: "has-field",
-      });
+      edges.push(createEdge(modelId, fieldId, "has-field"));
     }
 
     const relationships = model.relationships ?? {};
@@ -118,11 +136,7 @@ export function buildGraph(definition: ApplicationDefinition): ApplicationGraph 
         }),
       );
 
-      edges.push({
-        from: modelId,
-        to: relId,
-        type: "has-relationship",
-      });
+      edges.push(createEdge(modelId, relId, "has-relationship"));
 
       if (relDef.model) {
         const targetModel = models.find(
@@ -130,11 +144,7 @@ export function buildGraph(definition: ApplicationDefinition): ApplicationGraph 
         );
 
         if (targetModel) {
-          edges.push({
-            from: relId,
-            to: `model:${targetModel.id}`,
-            type: "targets",
-          });
+          edges.push(createEdge(relId, `model:${targetModel.id}`, "targets"));
         }
       }
     }
