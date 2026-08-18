@@ -6,7 +6,14 @@ export type GraphNodeType =
   | "application"
   | "model"
   | "field"
-  | "relationship";
+  | "relationship"
+  | "route"
+  | "operation"
+  | "event"
+  | "policy"
+  | "workflow"
+  | "service"
+  | "integration";
 
 export interface GraphNode {
   id: string;
@@ -28,6 +35,18 @@ export interface ApplicationGraph {
   edges: GraphEdge[];
 }
 
+export function createNode(
+  type: GraphNodeType,
+  id: string,
+  data?: Record<string, unknown>,
+): GraphNode {
+  return {
+    id,
+    type,
+    ...(data ? { data } : {}),
+  };
+}
+
 function slugify(value: string): string {
   return value
     .toLowerCase()
@@ -41,28 +60,24 @@ export function buildGraph(definition: ApplicationDefinition): ApplicationGraph 
 
   const appId = `app:${slugify(definition.name)}`;
 
-  nodes.push({
-    id: appId,
-    type: "application",
-    data: {
+  nodes.push(
+    createNode("application", appId, {
       name: definition.name,
       version: definition.version,
       environment: definition.environment,
-    },
-  });
+    }),
+  );
 
   const models = definition.models ?? [];
 
   for (const model of models) {
     const modelId = `model:${model.id}`;
 
-    nodes.push({
-      id: modelId,
-      type: "model",
-      data: {
+    nodes.push(
+      createNode("model", modelId, {
         name: model.name,
-      },
-    });
+      }),
+    );
 
     edges.push({
       from: appId,
@@ -75,15 +90,13 @@ export function buildGraph(definition: ApplicationDefinition): ApplicationGraph 
     for (const [fieldName, fieldDef] of Object.entries(fields)) {
       const fieldId = `field:${model.id}.${fieldName}`;
 
-      nodes.push({
-        id: fieldId,
-        type: "field",
-        data: {
+      nodes.push(
+        createNode("field", fieldId, {
           name: fieldName,
           type: fieldDef.type,
           modifiers: fieldDef.modifiers,
-        },
-      });
+        }),
+      );
 
       edges.push({
         from: modelId,
@@ -97,15 +110,13 @@ export function buildGraph(definition: ApplicationDefinition): ApplicationGraph 
     for (const [relName, relDef] of Object.entries(relationships)) {
       const relId = `relationship:${model.id}.${relName}`;
 
-      nodes.push({
-        id: relId,
-        type: "relationship",
-        data: {
+      nodes.push(
+        createNode("relationship", relId, {
           name: relName,
           type: relDef.type,
           model: relDef.model,
-        },
-      });
+        }),
+      );
 
       edges.push({
         from: modelId,

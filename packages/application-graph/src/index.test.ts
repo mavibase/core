@@ -1,10 +1,49 @@
 import { describe, expect, it } from "vitest";
-import { buildGraph, version } from "./index.js";
+import { buildGraph, createNode, version } from "./index.js";
 import { defineApp, defineModel, field, relationship } from "@mavibase/core";
 
 describe("application-graph", () => {
   it("exports a version", () => {
     expect(version).toBe("0.1.0");
+  });
+
+  describe("createNode", () => {
+    it("creates a node without data", () => {
+      expect(createNode("model", "model:user")).toEqual({
+        id: "model:user",
+        type: "model",
+      });
+    });
+
+    it("creates a node with data", () => {
+      expect(
+        createNode("route", "route:users.list", { method: "GET" }),
+      ).toEqual({
+        id: "route:users.list",
+        type: "route",
+        data: { method: "GET" },
+      });
+    });
+
+    it("supports every graph node type", () => {
+      expect(createNode("application", "app:test").type).toBe("application");
+      expect(createNode("model", "model:user").type).toBe("model");
+      expect(createNode("field", "field:user.name").type).toBe("field");
+      expect(createNode("relationship", "relationship:user.posts").type).toBe(
+        "relationship",
+      );
+      expect(createNode("route", "route:users.list").type).toBe("route");
+      expect(createNode("operation", "operation:create-user").type).toBe(
+        "operation",
+      );
+      expect(createNode("event", "event:user-created").type).toBe("event");
+      expect(createNode("policy", "policy:owns-post").type).toBe("policy");
+      expect(createNode("workflow", "workflow:checkout").type).toBe("workflow");
+      expect(createNode("service", "service:auth").type).toBe("service");
+      expect(createNode("integration", "integration:stripe").type).toBe(
+        "integration",
+      );
+    });
   });
 
   it("builds an empty graph from a definition", () => {
