@@ -229,6 +229,123 @@ describe("core", () => {
     });
   });
 
+  describe("field modifiers", () => {
+    it("marks a field as required", () => {
+      expect(field.string().required()).toEqual({
+        type: "string",
+        modifiers: { required: true, optional: false },
+      });
+    });
+
+    it("marks a field as optional", () => {
+      expect(field.string().optional()).toEqual({
+        type: "string",
+        modifiers: { optional: true, required: false },
+      });
+    });
+
+    it("marks a field as nullable", () => {
+      expect(field.string().nullable()).toEqual({
+        type: "string",
+        modifiers: { nullable: true },
+      });
+    });
+
+    it("marks a field as unique", () => {
+      expect(field.string().unique()).toEqual({
+        type: "string",
+        modifiers: { unique: true },
+      });
+    });
+
+    it("marks a field as indexed", () => {
+      expect(field.string().indexed()).toEqual({
+        type: "string",
+        modifiers: { indexed: true },
+      });
+    });
+
+    it("marks a field as primary", () => {
+      expect(field.uuid().primary()).toEqual({
+        type: "uuid",
+        modifiers: { primary: true },
+      });
+    });
+
+    it("sets a default value", () => {
+      expect(field.boolean().default(false)).toEqual({
+        type: "boolean",
+        modifiers: { default: false },
+      });
+    });
+
+    it("marks a field as generated", () => {
+      expect(field.datetime().generated()).toEqual({
+        type: "datetime",
+        modifiers: { generated: true },
+      });
+    });
+
+    it("marks a field as read-only", () => {
+      expect(field.string().readOnly()).toEqual({
+        type: "string",
+        modifiers: { readOnly: true },
+      });
+    });
+
+    it("marks a field as write-only", () => {
+      expect(field.string().writeOnly()).toEqual({
+        type: "string",
+        modifiers: { writeOnly: true },
+      });
+    });
+
+    it("chains multiple modifiers", () => {
+      expect(field.string().required().unique().indexed()).toEqual({
+        type: "string",
+        modifiers: {
+          required: true,
+          optional: false,
+          unique: true,
+          indexed: true,
+        },
+      });
+    });
+
+    it("keeps the original field unchanged when chaining", () => {
+      const base = field.string();
+      const modified = base.required();
+
+      expect(base).toEqual({ type: "string" });
+      expect(modified).toEqual({
+        type: "string",
+        modifiers: { required: true, optional: false },
+      });
+    });
+
+    it("registers modified fields in a model", () => {
+      const User = defineModel({
+        name: "User",
+        fields: {
+          id: field.uuid().primary(),
+          email: field.string().required().unique(),
+          nickname: field.string().nullable(),
+          createdAt: field.datetime().generated(),
+        },
+      });
+
+      expect(User.fields).toEqual({
+        id: { type: "uuid", modifiers: { primary: true } },
+        email: {
+          type: "string",
+          modifiers: { required: true, optional: false, unique: true },
+        },
+        nickname: { type: "string", modifiers: { nullable: true } },
+        createdAt: { type: "datetime", modifiers: { generated: true } },
+      });
+    });
+  });
+
   describe("field", () => {
     it("creates a string field", () => {
       expect(field.string()).toEqual({ type: "string" });

@@ -62,10 +62,147 @@ export type FieldType =
   | "datetime"
   | "json";
 
+/** Modifiers that shape how a field behaves */
+export interface FieldModifiers {
+  /** Field must always be present */
+  required?: boolean;
+
+  /** Field can be omitted */
+  optional?: boolean;
+
+  /** Field can be null */
+  nullable?: boolean;
+
+  /** Values must be distinct */
+  unique?: boolean;
+
+  /** Values are searchable by index */
+  indexed?: boolean;
+
+  /** Field identifies the record */
+  primary?: boolean;
+
+  /** Value used when none is supplied */
+  default?: unknown;
+
+  /** Value is produced automatically */
+  generated?: boolean;
+
+  /** Field is written on create or update but never returned */
+  writeOnly?: boolean;
+
+  /** Field is returned but ignored when written */
+  readOnly?: boolean;
+}
+
 /** A field definition describes a single model field */
 export interface FieldDefinition {
   type: FieldType;
+  modifiers?: FieldModifiers;
 }
+
+/** A field definition with chainable modifier methods */
+export interface ModifiableField extends FieldDefinition {
+  required(): ModifiableField;
+  optional(): ModifiableField;
+  nullable(): ModifiableField;
+  unique(): ModifiableField;
+  indexed(): ModifiableField;
+  primary(): ModifiableField;
+  default(value: unknown): ModifiableField;
+  generated(): ModifiableField;
+  readOnly(): ModifiableField;
+  writeOnly(): ModifiableField;
+}
+
+/** Modifier methods live on the prototype so structural equality ignores them */
+const fieldPrototype = {
+  required(this: ModifiableField): ModifiableField {
+    return withModifiers(this, { required: true, optional: false });
+  },
+  optional(this: ModifiableField): ModifiableField {
+    return withModifiers(this, { optional: true, required: false });
+  },
+  nullable(this: ModifiableField): ModifiableField {
+    return withModifiers(this, { nullable: true });
+  },
+  unique(this: ModifiableField): ModifiableField {
+    return withModifiers(this, { unique: true });
+  },
+  indexed(this: ModifiableField): ModifiableField {
+    return withModifiers(this, { indexed: true });
+  },
+  primary(this: ModifiableField): ModifiableField {
+    return withModifiers(this, { primary: true });
+  },
+  default(this: ModifiableField, value: unknown): ModifiableField {
+    return withModifiers(this, { default: value });
+  },
+  generated(this: ModifiableField): ModifiableField {
+    return withModifiers(this, { generated: true });
+  },
+  readOnly(this: ModifiableField): ModifiableField {
+    return withModifiers(this, { readOnly: true });
+  },
+  writeOnly(this: ModifiableField): ModifiableField {
+    return withModifiers(this, { writeOnly: true });
+  },
+};
+
+/** Build a field from a type and optional modifiers */
+function createField(
+  type: FieldType,
+  modifiers?: FieldModifiers,
+): ModifiableField {
+  const definition = Object.create(fieldPrototype) as ModifiableField;
+
+  definition.type = type;
+
+  if (modifiers) {
+    definition.modifiers = modifiers;
+  }
+
+  return definition;
+}
+
+/** Return a new field with the given modifiers merged in */
+function withModifiers(
+  field: ModifiableField,
+  modifiers: FieldModifiers,
+): ModifiableField {
+  return createField(field.type, {
+    ...field.modifiers,
+    ...modifiers,
+  });
+}
+
+/** Factory for creating field definitions */
+export const field = {
+  string(): ModifiableField {
+    return createField("string");
+  },
+  integer(): ModifiableField {
+    return createField("integer");
+  },
+  float(): ModifiableField {
+    return createField("float");
+  },
+  decimal(): ModifiableField {
+    return createField("decimal");
+  },
+  boolean(): ModifiableField {
+    return createField("boolean");
+  },
+  uuid(): ModifiableField {
+    return createField("uuid");
+  },
+  datetime(): ModifiableField {
+    return createField("datetime");
+  },
+  json(): ModifiableField {
+    return createField("json");
+  },
+};
 
 export interface ModelDefinition {
   /** Stable identifier for the model */
@@ -99,34 +236,6 @@ export interface DefineModelInput {
   constraints?: unknown[];
   metadata?: Record<string, unknown>;
 }
-
-/** Factory for creating field definitions */
-export const field = {
-  string(): FieldDefinition {
-    return { type: "string" };
-  },
-  integer(): FieldDefinition {
-    return { type: "integer" };
-  },
-  float(): FieldDefinition {
-    return { type: "float" };
-  },
-  decimal(): FieldDefinition {
-    return { type: "decimal" };
-  },
-  boolean(): FieldDefinition {
-    return { type: "boolean" };
-  },
-  uuid(): FieldDefinition {
-    return { type: "uuid" };
-  },
-  datetime(): FieldDefinition {
-    return { type: "datetime" };
-  },
-  json(): FieldDefinition {
-    return { type: "json" };
-  },
-};
 
 export interface ApplicationDefinition {
   name: string;
