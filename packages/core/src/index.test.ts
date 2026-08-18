@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defineApp, defineModel, version } from "./index.js";
+import { defineApp, defineModel, field, version } from "./index.js";
 
 describe("core", () => {
   it("exports a version", () => {
@@ -195,7 +195,7 @@ describe("core", () => {
     });
 
     it("preserves provided fields", () => {
-      const fields = { id: { type: "uuid" } };
+      const fields = { id: field.uuid() };
       const model = defineModel({ name: "User", fields });
       expect(model.fields).toBe(fields);
     });
@@ -226,6 +226,59 @@ describe("core", () => {
 
     it("rejects an empty model name", () => {
       expect(() => defineModel({ name: "  " })).toThrow("Model name must not be empty.");
+    });
+  });
+
+  describe("field", () => {
+    it("creates a string field", () => {
+      expect(field.string()).toEqual({ type: "string" });
+    });
+
+    it("creates an integer field", () => {
+      expect(field.integer()).toEqual({ type: "integer" });
+    });
+
+    it("creates a float field", () => {
+      expect(field.float()).toEqual({ type: "float" });
+    });
+
+    it("creates a decimal field", () => {
+      expect(field.decimal()).toEqual({ type: "decimal" });
+    });
+
+    it("creates a boolean field", () => {
+      expect(field.boolean()).toEqual({ type: "boolean" });
+    });
+
+    it("creates a uuid field", () => {
+      expect(field.uuid()).toEqual({ type: "uuid" });
+    });
+
+    it("creates a datetime field", () => {
+      expect(field.datetime()).toEqual({ type: "datetime" });
+    });
+
+    it("creates a json field", () => {
+      expect(field.json()).toEqual({ type: "json" });
+    });
+
+    it("registers fields in a model", () => {
+      const User = defineModel({
+        name: "User",
+        fields: {
+          id: field.uuid(),
+          email: field.string(),
+          age: field.integer(),
+          active: field.boolean(),
+        },
+      });
+
+      expect(User.fields).toEqual({
+        id: { type: "uuid" },
+        email: { type: "string" },
+        age: { type: "integer" },
+        active: { type: "boolean" },
+      });
     });
   });
 

@@ -51,6 +51,22 @@ export interface DefinitionsRegistry {
   [name: string]: Record<string, unknown>;
 }
 
+/** Mavibase field types */
+export type FieldType =
+  | "string"
+  | "integer"
+  | "float"
+  | "decimal"
+  | "boolean"
+  | "uuid"
+  | "datetime"
+  | "json";
+
+/** A field definition describes a single model field */
+export interface FieldDefinition {
+  type: FieldType;
+}
+
 export interface ModelDefinition {
   /** Stable identifier for the model */
   id: string;
@@ -59,7 +75,7 @@ export interface ModelDefinition {
   name: string;
 
   /** Model fields */
-  fields?: Record<string, unknown>;
+  fields?: Record<string, FieldDefinition>;
 
   /** Model relationships */
   relationships?: Record<string, unknown>;
@@ -77,12 +93,40 @@ export interface ModelDefinition {
 export interface DefineModelInput {
   name: string;
   id?: string;
-  fields?: Record<string, unknown>;
+  fields?: Record<string, FieldDefinition>;
   relationships?: Record<string, unknown>;
   indexes?: unknown[];
   constraints?: unknown[];
   metadata?: Record<string, unknown>;
 }
+
+/** Factory for creating field definitions */
+export const field = {
+  string(): FieldDefinition {
+    return { type: "string" };
+  },
+  integer(): FieldDefinition {
+    return { type: "integer" };
+  },
+  float(): FieldDefinition {
+    return { type: "float" };
+  },
+  decimal(): FieldDefinition {
+    return { type: "decimal" };
+  },
+  boolean(): FieldDefinition {
+    return { type: "boolean" };
+  },
+  uuid(): FieldDefinition {
+    return { type: "uuid" };
+  },
+  datetime(): FieldDefinition {
+    return { type: "datetime" };
+  },
+  json(): FieldDefinition {
+    return { type: "json" };
+  },
+};
 
 export interface ApplicationDefinition {
   name: string;
