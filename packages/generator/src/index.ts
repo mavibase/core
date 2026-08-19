@@ -65,10 +65,7 @@ function renderModelFile(graph: ApplicationGraph): GeneratedFile | undefined {
   };
 }
 
-export function generate(
-  graph: ApplicationGraph,
-  options?: GenerateOptions,
-): GenerateResult {
+export function generate(graph: ApplicationGraph, options?: GenerateOptions): GenerateResult {
   const artifacts: GeneratedFile[] = [];
 
   const modelFile = renderModelFile(graph);
@@ -95,3 +92,4 @@ export function generateFromDefinition(
 }
 
 export { slugify };
+export * from "./filesystem.js";
