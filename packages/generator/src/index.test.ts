@@ -65,8 +65,12 @@ describe("generator", () => {
       throw new Error("Expected a model artifact.");
     }
 
-    expect(result.files).toEqual(["generated/models.ts", "generated/schemas.ts"]);
-    expect(result.artifacts.length).toBe(2);
+    expect(result.files).toEqual([
+      "generated/models.ts",
+      "generated/schemas.ts",
+      "generated/types.ts",
+    ]);
+    expect(result.artifacts.length).toBe(3);
     expect(modelArtifact.path).toBe("models.ts");
     expect(modelArtifact.content).toContain("export interface User {");
     expect(modelArtifact.content).toContain("  id: string;");
@@ -89,7 +93,11 @@ describe("generator", () => {
 
     const result = generateFromDefinition(app, { outDir: "src/generated" });
 
-    expect(result.files).toEqual(["src/generated/models.ts", "src/generated/schemas.ts"]);
+    expect(result.files).toEqual([
+      "src/generated/models.ts",
+      "src/generated/schemas.ts",
+      "src/generated/types.ts",
+    ]);
   });
 
   it("generates a models artifact from a built graph", () => {
@@ -123,7 +131,11 @@ describe("generator", () => {
       throw new Error("Expected a model artifact.");
     }
 
-    expect(result.files).toEqual(["generated/models.ts", "generated/schemas.ts"]);
+    expect(result.files).toEqual([
+      "generated/models.ts",
+      "generated/schemas.ts",
+      "generated/types.ts",
+    ]);
     expect(artifact.content).toContain("export interface User {");
     expect(artifact.content).toContain("export interface Post {");
   });
