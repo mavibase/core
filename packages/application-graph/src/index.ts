@@ -47,6 +47,20 @@ export interface ApplicationGraph {
   edges: GraphEdge[];
 }
 
+export type SerializedGraph = {
+  format: "mavibase-graph";
+  schemaVersion: 1;
+  graph: ApplicationGraph;
+};
+
+export interface GraphIssue {
+  path: string;
+  message: string;
+}
+
+const GRAPH_SCHEMA_VERSION = 1;
+const GRAPH_FORMAT = "mavibase-graph";
+
 export function createNode(
   type: GraphNodeType,
   id: string,
@@ -71,6 +85,106 @@ export function createEdge(
     type,
     ...(data ? { data } : {}),
   };
+}
+
+export function serializeGraph(graph: ApplicationGraph): string {
+  const payload: SerializedGraph = {
+    format: GRAPH_FORMAT,
+    schemaVersion: GRAPH_SCHEMA_VERSION,
+    graph: {
+      name: graph.name,
+      version: graph.version,
+      nodes: graph.nodes,
+      edges: graph.edges,
+    },
+  };
+
+  return JSON.stringify(payload, null, 2);
+}
+
+export function deserializeGraph(input: string): ApplicationGraph {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(input);
+  } catch {
+    throw new Error("Failed to parse graph JSON.");
+  }
+
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("Invalid graph payload.");
+  }
+
+  const payload = parsed as Record<string, unknown>;
+
+  if (payload["format"] !== GRAPH_FORMAT) {
+    throw new Error('Invalid graph format. Expected "mavibase-graph".');
+  }
+
+  if (payload["schemaVersion"] !== GRAPH_SCHEMA_VERSION) {
+    throw new Error(`Unsupported graph schema version: "${payload["schemaVersion"]}".`);
+  }
+
+  const graph = payload["graph"] as ApplicationGraph | undefined;
+
+  if (!graph || typeof graph !== "object") {
+    throw new Error("Invalid graph payload.");
+  }
+
+  return graph;
+}
+
+export function validateGraph(graph: ApplicationGraph): GraphIssue[] {
+  const issues: GraphIssue[] = [];
+
+  const nodeIds = new Set<string>();
+  const nodeIdToType = new Map<string, GraphNodeType>();
+
+  for (const node of graph.nodes) {
+    if (nodeIds.has(node.id)) {
+      issues.push({
+        path: `nodes[${node.id}]`,
+        message: `Duplicate node id: "${node.id}". Node ids must be unique.`,
+      });
+    }
+
+    nodeIds.add(node.id);
+    nodeIdToType.set(node.id, node.type);
+  }
+
+  for (const edge of graph.edges) {
+    if (!edge.from || !edge.to) {
+      issues.push({
+        path: "edges",
+        message: "Edge must define both from and to node ids.",
+      });
+    }
+
+    if (!nodeIds.has(edge.from)) {
+      issues.push({
+        path: `edges[${edge.from} -> ${edge.to}]`,
+        message: `Edge references unknown source node: "${edge.from}".`,
+      });
+    }
+
+    if (!nodeIds.has(edge.to)) {
+      issues.push({
+        path: `edges[${edge.from} -> ${edge.to}]`,
+        message: `Edge references unknown target node: "${edge.to}".`,
+      });
+    }
+
+    const fromType = nodeIdToType.get(edge.from);
+
+    if (fromType === "application" && edge.type !== "contains") {
+      issues.push({
+        path: `edges[${edge.from} -> ${edge.to}]`,
+        message: "Application nodes may only have contains edges.",
+      });
+    }
+  }
+
+  return issues;
 }
 
 function slugify(value: string): string {

@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { buildGraph, createEdge, createNode, version } from "./index.js";
+import {
+  buildGraph,
+  createEdge,
+  createNode,
+  deserializeGraph,
+  serializeGraph,
+  validateGraph,
+  version,
+} from "./index.js";
 import { defineApp, defineModel, field, relationship } from "@mavibase/core";
 
 describe("application-graph", () => {
@@ -269,6 +277,280 @@ describe("application-graph", () => {
       from: "relationship:user.posts",
       to: "model:post",
       type: "targets",
+    });
+  });
+
+  describe("serializeGraph", () => {
+    it("serializes a graph into a stable JSON string", () => {
+      const User = defineModel({ name: "User" });
+      const app = defineApp({
+        name: "my-app",
+        version: "1.0.0",
+        environment: "development",
+        stack: {
+          language: "typescript",
+          runtime: "node",
+        },
+        models: [User],
+      });
+
+      const graph = buildGraph(app);
+      const json = serializeGraph(graph);
+
+      const parsed = JSON.parse(json);
+
+      expect(parsed["format"]).toBe("mavibase-graph");
+      expect(parsed["schemaVersion"]).toBe(1);
+      expect(parsed["graph"]).toEqual(graph);
+    });
+
+    it("produces identical output for the same graph", () => {
+      const app = defineApp({
+        name: "my-app",
+        version: "1.0.0",
+        environment: "development",
+        stack: {
+          language: "typescript",
+          runtime: "node",
+        },
+      });
+
+      const graph = buildGraph(app);
+
+      expect(serializeGraph(graph)).toBe(serializeGraph(graph));
+    });
+  });
+
+  describe("deserializeGraph", () => {
+    it("deserializes a serialized graph back to its original form", () => {
+      const User = defineModel({ name: "User" });
+      const app = defineApp({
+        name: "my-app",
+        version: "1.0.0",
+        environment: "development",
+        stack: {
+          language: "typescript",
+          runtime: "node",
+        },
+        models: [User],
+      });
+
+      const graph = buildGraph(app);
+      const restored = deserializeGraph(serializeGraph(graph));
+
+      expect(restored).toEqual(graph);
+    });
+
+    it("round-trips through build -> serialize -> deserialize", () => {
+      const User = defineModel({
+        name: "User",
+        relationships: {
+          posts: relationship.oneToMany().to("Post"),
+        },
+      });
+      const Post = defineModel({ name: "Post" });
+      const app = defineApp({
+        name: "my-app",
+        version: "1.0.0",
+        environment: "development",
+        stack: {
+          language: "typescript",
+          runtime: "node",
+        },
+        models: [User, Post],
+      });
+
+      const graph = buildGraph(app);
+      const restored = deserializeGraph(serializeGraph(graph));
+
+      expect(restored.name).toBe("my-app");
+      expect(restored.nodes).toHaveLength(graph.nodes.length);
+      expect(restored.edges).toEqual(graph.edges);
+    });
+
+    it("throws for invalid JSON", () => {
+      expect(() => deserializeGraph("not-json")).toThrow(
+        "Failed to parse graph JSON.",
+      );
+    });
+
+    it("throws for an invalid format", () => {
+      expect(() =>
+        deserializeGraph(
+          JSON.stringify({ format: "other", schemaVersion: 1, graph: {} }),
+        ),
+      ).toThrow('Invalid graph format. Expected "mavibase-graph".');
+    });
+
+    it("throws for an unsupported schema version", () => {
+      expect(() =>
+        deserializeGraph(
+          JSON.stringify({
+            format: "mavibase-graph",
+            schemaVersion: 99,
+            graph: {},
+          }),
+        ),
+      ).toThrow('Unsupported graph schema version: "99".');
+    });
+
+    it("throws for a missing graph payload", () => {
+      expect(() =>
+        deserializeGraph(
+          JSON.stringify({ format: "mavibase-graph", schemaVersion: 1 }),
+        ),
+      ).toThrow("Invalid graph payload.");
+    });
+  });
+
+  describe("validateGraph", () => {
+    it("returns no issues for a valid graph", () => {
+      const User = defineModel({ name: "User" });
+      const app = defineApp({
+        name: "my-app",
+        version: "1.0.0",
+        environment: "development",
+        stack: {
+          language: "typescript",
+          runtime: "node",
+        },
+        models: [User],
+      });
+
+      const graph = buildGraph(app);
+
+      expect(validateGraph(graph)).toEqual([]);
+    });
+
+    it("reports duplicate node ids", () => {
+      const graph = {
+        name: "my-app",
+        version: "1.0.0",
+        nodes: [
+          { id: "model:user", type: "model" as const },
+          { id: "model:user", type: "model" as const },
+        ],
+        edges: [],
+      };
+
+      expect(validateGraph(graph)).toContainEqual({
+        path: "nodes[model:user]",
+        message: 'Duplicate node id: "model:user". Node ids must be unique.',
+      });
+    });
+
+    it("reports edges referencing unknown source nodes", () => {
+      const graph = {
+        name: "my-app",
+        version: "1.0.0",
+        nodes: [{ id: "model:user", type: "model" as const }],
+        edges: [
+          {
+            from: "model:missing",
+            to: "model:user",
+            type: "connects" as const,
+          },
+        ],
+      };
+
+      expect(validateGraph(graph)).toContainEqual({
+        path: "edges[model:missing -> model:user]",
+        message: 'Edge references unknown source node: "model:missing".',
+      });
+    });
+
+    it("reports edges referencing unknown target nodes", () => {
+      const graph = {
+        name: "my-app",
+        version: "1.0.0",
+        nodes: [{ id: "model:user", type: "model" as const }],
+        edges: [
+          {
+            from: "model:user",
+            to: "model:missing",
+            type: "connects" as const,
+          },
+        ],
+      };
+
+      expect(validateGraph(graph)).toContainEqual({
+        path: "edges[model:user -> model:missing]",
+        message: 'Edge references unknown target node: "model:missing".',
+      });
+    });
+
+    it("reports edges with missing endpoints", () => {
+      const graph = {
+        name: "my-app",
+        version: "1.0.0",
+        nodes: [{ id: "model:user", type: "model" as const }],
+        edges: [{ from: "", to: "", type: "connects" as const }],
+      };
+
+      expect(validateGraph(graph)).toContainEqual({
+        path: "edges",
+        message: "Edge must define both from and to node ids.",
+      });
+    });
+
+    it("reports application nodes with non-contains edges", () => {
+      const graph = {
+        name: "my-app",
+        version: "1.0.0",
+        nodes: [{ id: "app:my-app", type: "application" as const }],
+        edges: [
+          {
+            from: "app:my-app",
+            to: "app:my-app",
+            type: "targets" as const,
+          },
+        ],
+      };
+
+      expect(validateGraph(graph)).toContainEqual({
+        path: "edges[app:my-app -> app:my-app]",
+        message: "Application nodes may only have contains edges.",
+      });
+    });
+  });
+
+  describe("graph traversal", () => {
+    it("traverses from a node to its dependents via edges", () => {
+      const User = defineModel({
+        name: "User",
+        fields: {
+          id: field.uuid(),
+          email: field.string(),
+        },
+      });
+
+      const app = defineApp({
+        name: "my-app",
+        version: "1.0.0",
+        environment: "development",
+        stack: {
+          language: "typescript",
+          runtime: "node",
+        },
+        models: [User],
+      });
+
+      const graph = buildGraph(app);
+
+      const outgoing = graph.edges
+        .filter((edge) => edge.from === "model:user")
+        .map((edge) => edge.to);
+
+      expect(outgoing).toEqual([
+        "field:user.id",
+        "field:user.email",
+      ]);
+
+      const incoming = graph.edges
+        .filter((edge) => edge.to === "model:user")
+        .map((edge) => edge.from);
+
+      expect(incoming).toEqual(["app:my-app"]);
     });
   });
 });
