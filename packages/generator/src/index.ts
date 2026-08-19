@@ -2,6 +2,8 @@ import type { ApplicationDefinition } from "@mavibase/core";
 import type { ApplicationGraph } from "@mavibase/application-graph";
 import { buildGraph } from "@mavibase/application-graph";
 
+import { generateModels } from "./model-generator.js";
+
 export const version = "0.1.0";
 
 export interface GenerateOptions {
@@ -25,50 +27,10 @@ function slugify(value: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-function renderModelFile(graph: ApplicationGraph): GeneratedFile | undefined {
-  const modelNodes = graph.nodes.filter((node) => node.type === "model");
-
-  if (modelNodes.length === 0) {
-    return undefined;
-  }
-
-  const lines: string[] = [];
-
-  for (const node of modelNodes) {
-    const name = node.data?.["name"] as string | undefined;
-    const modelName = name ?? node.id;
-
-    lines.push(`export interface ${modelName} {`);
-
-    const fieldNodes = graph.edges
-      .filter((edge) => edge.from === node.id && edge.type === "has-field")
-      .map((edge) => edge.to)
-      .map((id) => graph.nodes.find((candidate) => candidate.id === id))
-      .filter((candidate) => candidate !== undefined);
-
-    for (const fieldNode of fieldNodes) {
-      const fieldName = fieldNode.data?.["name"] as string | undefined;
-      const fieldType = fieldNode.data?.["type"] as string | undefined;
-
-      if (fieldName && fieldType) {
-        lines.push(`  ${fieldName}: ${fieldType};`);
-      }
-    }
-
-    lines.push("}");
-    lines.push("");
-  }
-
-  return {
-    path: "models.ts",
-    content: lines.join("\n").trimEnd() + "\n",
-  };
-}
-
 export function generate(graph: ApplicationGraph, options?: GenerateOptions): GenerateResult {
   const artifacts: GeneratedFile[] = [];
 
-  const modelFile = renderModelFile(graph);
+  const modelFile = generateModels(graph);
 
   if (modelFile) {
     artifacts.push(modelFile);
@@ -93,4 +55,5 @@ export function generateFromDefinition(
 
 export { slugify };
 export * from "./filesystem.js";
+export * from "./model-generator.js";
 export * from "./template.js";

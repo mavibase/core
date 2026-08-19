@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  generate,
-  generateFromDefinition,
-  version,
-} from "./index.js";
+import { generate, generateFromDefinition, version } from "./index.js";
 import { defineApp, defineModel, field, relationship } from "@mavibase/core";
 import { buildGraph } from "@mavibase/application-graph";
 
@@ -73,9 +69,9 @@ describe("generator", () => {
     expect(result.artifacts.length).toBe(1);
     expect(modelArtifact.path).toBe("models.ts");
     expect(modelArtifact.content).toContain("export interface User {");
-    expect(modelArtifact.content).toContain("  id: uuid;");
+    expect(modelArtifact.content).toContain("  id: string;");
     expect(modelArtifact.content).toContain("  email: string;");
-    expect(modelArtifact.content).toContain("  age: integer;");
+    expect(modelArtifact.content).toContain("  age: number;");
   });
 
   it("honors a custom outDir option", () => {
