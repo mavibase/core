@@ -87,6 +87,21 @@ export interface DatabaseSchemaDefinition {
   tables: readonly DatabaseTableDefinition[];
 }
 
+export type DatabaseSeedMode = "insert" | "upsert";
+
+export interface DatabaseSeedTableDefinition {
+  table: string;
+  rows: readonly Readonly<Record<string, unknown>>[];
+  mode?: DatabaseSeedMode;
+}
+
+export interface DatabaseSeedDefinition {
+  id: string;
+  name: string;
+  order?: number;
+  tables: readonly DatabaseSeedTableDefinition[];
+}
+
 export interface DatabaseSchemaValidationIssue {
   path: string;
   message: string;
@@ -99,6 +114,17 @@ export class DatabaseSchemaDefinitionError extends Error {
   constructor(issues: readonly DatabaseSchemaValidationIssue[]) {
     super(`Invalid database schema: ${issues.map((issue) => issue.message).join(" ")}`);
     this.name = "DatabaseSchemaDefinitionError";
+    this.issues = issues;
+  }
+}
+
+export class DatabaseSeedDefinitionError extends Error {
+  readonly code = "MAVIBASE_DATABASE_SEED_DEFINITION_ERROR";
+  readonly issues: readonly DatabaseSchemaValidationIssue[];
+
+  constructor(issues: readonly DatabaseSchemaValidationIssue[]) {
+    super(`Invalid database seed: ${issues.map((issue) => issue.message).join(" ")}`);
+    this.name = "DatabaseSeedDefinitionError";
     this.issues = issues;
   }
 }
@@ -229,6 +255,74 @@ export function defineDatabaseConstraint(
     name,
     ...("columns" in input ? { columns: [...input.columns] } : {}),
   } as DatabaseConstraintDefinition;
+}
+
+export function validateDatabaseSeedDefinition(
+  definition: unknown,
+): DatabaseSchemaValidationIssue[] {
+  const issues: DatabaseSchemaValidationIssue[] = [];
+  if (!isRecord(definition)) {
+    return [{ path: "seed", message: "Database seed definition must be an object." }];
+  }
+  if (!isNonEmptyString(definition["id"])) {
+    issues.push({ path: "id", message: "Database seed id must not be empty." });
+  }
+  if (!isNonEmptyString(definition["name"])) {
+    issues.push({ path: "name", message: "Database seed name must not be empty." });
+  }
+  if (
+    definition["order"] !== undefined &&
+    (typeof definition["order"] !== "number" || !Number.isFinite(definition["order"]))
+  ) {
+    issues.push({
+      path: "order",
+      message: "Database seed order must be a finite number when provided.",
+    });
+  }
+  if (!Array.isArray(definition["tables"]) || definition["tables"].length === 0) {
+    issues.push({
+      path: "tables",
+      message: "Database seed tables must contain at least one table.",
+    });
+    return issues;
+  }
+  for (const [tableIndex, table] of definition["tables"].entries()) {
+    const path = `tables[${tableIndex}]`;
+    if (!isRecord(table) || !isNonEmptyString(table["table"])) {
+      issues.push({ path, message: "Seed table must define a non-empty table name." });
+      continue;
+    }
+    if (!Array.isArray(table["rows"])) {
+      issues.push({ path: `${path}.rows`, message: "Seed table rows must be an array." });
+      continue;
+    }
+    if (table["mode"] !== undefined && table["mode"] !== "insert" && table["mode"] !== "upsert") {
+      issues.push({ path: `${path}.mode`, message: "Seed table mode must be insert or upsert." });
+    }
+    for (const [rowIndex, row] of table["rows"].entries()) {
+      if (!isRecord(row)) {
+        issues.push({ path: `${path}.rows[${rowIndex}]`, message: "Seed rows must be objects." });
+      }
+    }
+  }
+  return issues;
+}
+
+export function defineDatabaseSeed(definition: DatabaseSeedDefinition): DatabaseSeedDefinition {
+  const issues = validateDatabaseSeedDefinition(definition);
+  if (issues.length > 0) throw new DatabaseSeedDefinitionError(issues);
+  return {
+    id: definition.id,
+    name: definition.name,
+    ...(definition.order === undefined ? {} : { order: definition.order }),
+    tables: [...definition.tables]
+      .sort((left, right) => left.table.localeCompare(right.table))
+      .map((table) => ({
+        table: table.table,
+        ...(table.mode === undefined ? {} : { mode: table.mode }),
+        rows: table.rows.map((row) => ({ ...row })),
+      })),
+  };
 }
 
 const scalarTypes: readonly DatabaseScalarType[] = [
