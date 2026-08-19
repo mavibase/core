@@ -71,6 +71,7 @@ export { slugify };
 export * from "./filesystem.js";
 export * from "./generated-code-testing.js";
 export * from "./model-generator.js";
+export * from "./migration-generator.js";
 export * from "./postgresql-generator.js";
 export * from "./sql-generator.js";
 export * from "./template.js";
