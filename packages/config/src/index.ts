@@ -13,7 +13,7 @@ export type BackendFramework = "express";
 export type Runtime = "node" | "bun" | "deno";
 
 /** Database provider */
-export type DatabaseProvider = "postgresql";
+export type DatabaseProvider = "postgresql" | "mysql" | "sqlite";
 
 export interface MavibaseConfig {
   language: Language;
@@ -34,4 +34,5 @@ export function defineConfig(config: MavibaseConfig): MavibaseConfig {
 }
 
 export * from "./framework.js";
+export * from "./database.js";
 export * from "./runtime.js";
