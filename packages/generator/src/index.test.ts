@@ -67,10 +67,11 @@ describe("generator", () => {
 
     expect(result.files).toEqual([
       "generated/models.ts",
+      "generated/model-metadata.ts",
       "generated/schemas.ts",
       "generated/types.ts",
     ]);
-    expect(result.artifacts.length).toBe(3);
+    expect(result.artifacts.length).toBe(4);
     expect(modelArtifact.path).toBe("models.ts");
     expect(modelArtifact.content).toContain("export interface User {");
     expect(modelArtifact.content).toContain("  id: string;");
@@ -95,6 +96,7 @@ describe("generator", () => {
 
     expect(result.files).toEqual([
       "src/generated/models.ts",
+      "src/generated/model-metadata.ts",
       "src/generated/schemas.ts",
       "src/generated/types.ts",
     ]);
@@ -133,6 +135,7 @@ describe("generator", () => {
 
     expect(result.files).toEqual([
       "generated/models.ts",
+      "generated/model-metadata.ts",
       "generated/schemas.ts",
       "generated/types.ts",
     ]);

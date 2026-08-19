@@ -21,6 +21,28 @@ export interface ModelsTemplateData {
   models: ModelTemplateData[];
 }
 
+export interface ModelMetadataFieldTemplateData {
+  type: string;
+  required: boolean;
+  optional: boolean;
+  nullable: boolean;
+  unique: boolean;
+  indexed: boolean;
+  primary: boolean;
+  generated: boolean;
+  readOnly: boolean;
+  writeOnly: boolean;
+  defaultValue?: unknown;
+}
+
+export interface ModelMetadataTemplateData {
+  models: {
+    name: string;
+    table: string;
+    fields: Record<string, ModelMetadataFieldTemplateData>;
+  }[];
+}
+
 const fieldTypeMap: Readonly<Record<FieldType, string>> = {
   string: "string",
   integer: "number",
@@ -50,6 +72,41 @@ export const modelsTemplate = defineTemplate<ModelsTemplateData>(
       })
       .join("\n\n") + "\n",
   { name: "models" },
+);
+
+export const modelMetadataTemplate = defineTemplate<ModelMetadataTemplateData>(
+  ({ models }) =>
+    models
+      .map((model) => {
+        const lines = [
+          `export const ${model.name}Model = {`,
+          `  name: ${JSON.stringify(model.name)},`,
+          `  table: ${JSON.stringify(model.table)},`,
+          "  fields: {",
+        ];
+        for (const [name, field] of Object.entries(model.fields)) {
+          const values = [
+            `type: ${JSON.stringify(field.type)}`,
+            `required: ${field.required}`,
+            `optional: ${field.optional}`,
+            `nullable: ${field.nullable}`,
+            `unique: ${field.unique}`,
+            `indexed: ${field.indexed}`,
+            `primary: ${field.primary}`,
+            `generated: ${field.generated}`,
+            `readOnly: ${field.readOnly}`,
+            `writeOnly: ${field.writeOnly}`,
+            ...(field.defaultValue === undefined
+              ? []
+              : [`defaultValue: ${JSON.stringify(field.defaultValue)}`]),
+          ];
+          lines.push(`    ${JSON.stringify(name)}: { ${values.join(", ")} },`);
+        }
+        lines.push("  },", "} as const;");
+        return lines.join("\n");
+      })
+      .join("\n\n") + (models.length > 0 ? "\n" : ""),
+  { name: "model-metadata" },
 );
 
 function fieldType(type: unknown): string {
@@ -135,6 +192,53 @@ export function modelTemplateData(graph: ApplicationGraph): ModelsTemplateData {
   return { models };
 }
 
+function modelMetadataFields(
+  graph: ApplicationGraph,
+  model: GraphNode,
+): Record<string, ModelMetadataFieldTemplateData> {
+  const fields = graph.edges
+    .filter((edge) => edge.from === model.id && edge.type === "has-field")
+    .map((edge) => graph.nodes.find((node) => node.id === edge.to))
+    .filter((node): node is GraphNode => node?.type === "field")
+    .map((node): readonly [string, ModelMetadataFieldTemplateData] | undefined => {
+      const name = nodeName(node);
+      if (!name) return undefined;
+      const fieldModifiers = modifiers(node.data?.["modifiers"]);
+      const metadata: ModelMetadataFieldTemplateData = {
+        type: typeof node.data?.["type"] === "string" ? node.data["type"] : "unknown",
+        required: fieldModifiers.required === true,
+        optional: fieldModifiers.optional === true,
+        nullable: fieldModifiers.nullable === true,
+        unique: fieldModifiers.unique === true,
+        indexed: fieldModifiers.indexed === true,
+        primary: fieldModifiers.primary === true,
+        generated: fieldModifiers.generated === true,
+        readOnly: fieldModifiers.readOnly === true,
+        writeOnly: fieldModifiers.writeOnly === true,
+        ...(fieldModifiers.default === undefined ? {} : { defaultValue: fieldModifiers.default }),
+      };
+      return [name, metadata];
+    })
+    .filter(
+      (entry): entry is readonly [string, ModelMetadataFieldTemplateData] => entry !== undefined,
+    )
+    .sort(([left], [right]) => left.localeCompare(right));
+
+  return Object.fromEntries(fields);
+}
+
+export function modelMetadataTemplateData(graph: ApplicationGraph): ModelMetadataTemplateData {
+  return {
+    models: graph.nodes
+      .filter((node) => node.type === "model")
+      .map((node) => {
+        const name = nodeName(node) ?? node.id;
+        return { name, table: name, fields: modelMetadataFields(graph, node) };
+      })
+      .sort((left, right) => left.name.localeCompare(right.name)),
+  };
+}
+
 export function generateModels(graph: ApplicationGraph): GeneratedFile | undefined {
   const data = modelTemplateData(graph);
   if (data.models.length === 0) {
@@ -144,5 +248,14 @@ export function generateModels(graph: ApplicationGraph): GeneratedFile | undefin
   return {
     path: "models.ts",
     content: modelsTemplate.render(data),
+  };
+}
+
+export function generateModelMetadata(graph: ApplicationGraph): GeneratedFile | undefined {
+  const data = modelMetadataTemplateData(graph);
+  if (data.models.length === 0) return undefined;
+  return {
+    path: "model-metadata.ts",
+    content: modelMetadataTemplate.render(data),
   };
 }

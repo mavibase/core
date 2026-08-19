@@ -3,7 +3,12 @@ import { describe, expect, it } from "vitest";
 import { defineModel, field, relationship } from "@mavibase/core";
 import { buildGraph } from "@mavibase/application-graph";
 
-import { generateModels, modelTemplateData } from "./model-generator.js";
+import {
+  generateModelMetadata,
+  generateModels,
+  modelMetadataTemplateData,
+  modelTemplateData,
+} from "./model-generator.js";
 
 describe("model generator", () => {
   it("generates a deterministic model artifact from model definitions", () => {
@@ -108,5 +113,34 @@ describe("model generator", () => {
 
     expect(modelTemplateData(graph).models).toEqual([]);
     expect(generateModels(graph)).toBeUndefined();
+    expect(generateModelMetadata(graph)).toBeUndefined();
+  });
+
+  it("generates deterministic framework-neutral model metadata", () => {
+    const User = defineModel({
+      name: "User",
+      fields: {
+        id: field.uuid().primary().generated(),
+        email: field.string().required().unique().indexed(),
+        nickname: field.string().optional().nullable().default("guest"),
+      },
+    });
+    const graph = buildGraph({
+      name: "metadata-app",
+      version: "1.0.0",
+      environment: "development",
+      stack: { language: "typescript", runtime: "node" },
+      models: [User],
+    });
+    const first = generateModelMetadata(graph);
+    const second = generateModelMetadata(graph);
+
+    expect(first).toEqual(second);
+    expect(first?.path).toBe("model-metadata.ts");
+    expect(first?.content).toContain("export const UserModel = {");
+    expect(first?.content).toContain('"email": { type: "string", required: true');
+    expect(first?.content).toContain("primary: true");
+    expect(first?.content).toContain('defaultValue: "guest"');
+    expect(modelMetadataTemplateData(graph).models[0]?.fields.email?.indexed).toBe(true);
   });
 });

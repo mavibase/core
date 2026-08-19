@@ -28,12 +28,18 @@ describe("generated-code testing", () => {
     const result = generateFromDefinition(definition);
 
     const verification = await assertGeneratedArtifacts(result.artifacts, {
-      expectedPaths: ["models.ts", "schemas.ts", "types.ts"],
+      expectedPaths: ["models.ts", "model-metadata.ts", "schemas.ts", "types.ts"],
     });
 
     expect(verification.valid).toBe(true);
-    expect(verification.files).toEqual(["models.ts", "schemas.ts", "types.ts"]);
+    expect(verification.files).toEqual([
+      "model-metadata.ts",
+      "models.ts",
+      "schemas.ts",
+      "types.ts",
+    ]);
     expect(verification.operations.map(({ operation }) => operation)).toEqual([
+      "create",
       "create",
       "create",
       "create",
