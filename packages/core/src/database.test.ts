@@ -1,14 +1,43 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createDatabaseConstraintName,
   createDatabaseIndexName,
   DatabaseSchemaDefinitionError,
+  defineDatabaseConstraint,
   defineDatabaseIndex,
   defineDatabaseSchema,
   validateDatabaseSchemaDefinition,
 } from "./database.js";
 
 describe("database schema abstraction", () => {
+  it("creates deterministic constraint definitions", () => {
+    expect(createDatabaseConstraintName("users", "primary-key", ["id"])).toBe(
+      "users_id_primary_key",
+    );
+    expect(defineDatabaseConstraint("users", { type: "unique", columns: ["email"] })).toEqual({
+      name: "users_email_unique",
+      type: "unique",
+      columns: ["email"],
+    });
+    expect(
+      defineDatabaseConstraint("posts", {
+        type: "foreign-key",
+        columns: ["user_id"],
+        referencedTable: "users",
+        referencedColumns: ["id"],
+        onDelete: "cascade",
+      }),
+    ).toEqual({
+      name: "posts_user_id_foreign_key",
+      type: "foreign-key",
+      columns: ["user_id"],
+      referencedTable: "users",
+      referencedColumns: ["id"],
+      onDelete: "cascade",
+    });
+  });
+
   it("creates deterministic explicit and generated index definitions", () => {
     expect(createDatabaseIndexName("User Accounts", ["tenant_id", "email"], true)).toBe(
       "user_accounts_tenant_id_email_uniq",
@@ -79,5 +108,11 @@ describe("database schema abstraction", () => {
     expect(() => defineDatabaseIndex("users", { columns: ["email", "email"] })).toThrow(
       DatabaseSchemaDefinitionError,
     );
+    expect(() =>
+      defineDatabaseConstraint("users", {
+        type: "check",
+        expression: "",
+      }),
+    ).toThrow(DatabaseSchemaDefinitionError);
   });
 });

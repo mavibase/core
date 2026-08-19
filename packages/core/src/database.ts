@@ -60,6 +60,19 @@ export type DatabaseConstraintDefinition =
   | DatabaseForeignKeyConstraint
   | DatabaseCheckConstraint;
 
+export type DatabaseConstraintInput =
+  | { name?: string; type: "primary-key" | "unique"; columns: readonly string[] }
+  | {
+      name?: string;
+      type: "foreign-key";
+      columns: readonly string[];
+      referencedTable: string;
+      referencedColumns: readonly string[];
+      onDelete?: ReferentialAction;
+      onUpdate?: ReferentialAction;
+    }
+  | { name?: string; type: "check"; expression: string };
+
 export interface DatabaseTableDefinition {
   id: string;
   name: string;
@@ -140,6 +153,82 @@ export function defineDatabaseIndex(
     columns: [...input.columns],
     ...(input.unique === undefined ? {} : { unique: input.unique }),
   };
+}
+
+export function createDatabaseConstraintName(
+  tableName: string,
+  type: DatabaseConstraintDefinition["type"],
+  columns: readonly string[] = [],
+): string {
+  const suffix = type.replace("-", "_");
+  const parts = [indexPart(tableName), ...columns.map(indexPart), suffix];
+  return parts.filter((part) => part.length > 0).join("_") || "constraint";
+}
+
+export function defineDatabaseConstraint(
+  tableName: string,
+  input: DatabaseConstraintInput,
+): DatabaseConstraintDefinition {
+  const issues: DatabaseSchemaValidationIssue[] = [];
+  if (!isNonEmptyString(tableName)) {
+    issues.push({ path: "table", message: "Constraint table name must not be empty." });
+  }
+  if (input.type === "check") {
+    if (!isNonEmptyString(input.expression)) {
+      issues.push({
+        path: "expression",
+        message: "Check constraints need a non-empty expression.",
+      });
+    }
+  } else {
+    if (!Array.isArray(input.columns) || input.columns.length === 0) {
+      issues.push({
+        path: "columns",
+        message: "Constraint columns must contain at least one value.",
+      });
+    } else {
+      const seen = new Set<string>();
+      for (const [index, column] of input.columns.entries()) {
+        if (!isNonEmptyString(column)) {
+          issues.push({
+            path: `columns[${index}]`,
+            message: "Constraint columns must contain non-empty strings.",
+          });
+        } else if (seen.has(column)) {
+          issues.push({
+            path: `columns[${index}]`,
+            message: `Constraint columns must not contain duplicates: "${column}".`,
+          });
+        }
+        seen.add(column);
+      }
+    }
+    if (input.type === "foreign-key") {
+      if (!isNonEmptyString(input.referencedTable)) {
+        issues.push({ path: "referencedTable", message: "Foreign keys need a referenced table." });
+      }
+      if (!Array.isArray(input.referencedColumns) || input.referencedColumns.length === 0) {
+        issues.push({
+          path: "referencedColumns",
+          message: "Foreign keys need referenced columns.",
+        });
+      } else if (new Set(input.referencedColumns).size !== input.referencedColumns.length) {
+        issues.push({
+          path: "referencedColumns",
+          message: "Referenced columns must not contain duplicates.",
+        });
+      }
+    }
+  }
+  if (issues.length > 0) throw new DatabaseSchemaDefinitionError(issues);
+  const name =
+    input.name ??
+    createDatabaseConstraintName(tableName, input.type, "columns" in input ? input.columns : []);
+  return {
+    ...input,
+    name,
+    ...("columns" in input ? { columns: [...input.columns] } : {}),
+  } as DatabaseConstraintDefinition;
 }
 
 const scalarTypes: readonly DatabaseScalarType[] = [
@@ -331,8 +420,18 @@ export function validateDatabaseSchemaDefinition(
               message: "Check constraints need a non-empty expression.",
             });
           }
-          if (type !== "check")
+          if (type !== "check") {
             validateReferences(value["columns"], columns, `${path}.columns`, issues);
+            if (
+              Array.isArray(value["columns"]) &&
+              new Set(value["columns"]).size !== value["columns"].length
+            ) {
+              issues.push({
+                path: `${path}.columns`,
+                message: "Constraint columns must not contain duplicates.",
+              });
+            }
+          }
           if (type === "foreign-key") {
             if (!isNonEmptyString(value["referencedTable"]))
               issues.push({
@@ -342,11 +441,28 @@ export function validateDatabaseSchemaDefinition(
             if (
               !Array.isArray(value["referencedColumns"]) ||
               value["referencedColumns"].length === 0
-            )
+            ) {
               issues.push({
                 path: `${path}.referencedColumns`,
                 message: "Foreign keys need referenced columns.",
               });
+            } else {
+              const referencedColumns = value["referencedColumns"] as unknown[];
+              for (const [columnIndex, column] of referencedColumns.entries()) {
+                if (!isNonEmptyString(column)) {
+                  issues.push({
+                    path: `${path}.referencedColumns[${columnIndex}]`,
+                    message: "Referenced columns must contain non-empty strings.",
+                  });
+                }
+              }
+              if (new Set(referencedColumns).size !== referencedColumns.length) {
+                issues.push({
+                  path: `${path}.referencedColumns`,
+                  message: "Referenced columns must not contain duplicates.",
+                });
+              }
+            }
             for (const key of ["onDelete", "onUpdate"]) {
               if (
                 value[key] !== undefined &&

@@ -117,4 +117,47 @@ describe("PostgreSQL generator", () => {
       'CREATE UNIQUE INDEX "memberships_organization_user_uniq" ON "memberships" ("organization_id", "user_id");',
     );
   });
+
+  it("renders supported PostgreSQL constraints", () => {
+    const artifact = generatePostgreSQLSchema({
+      name: "app",
+      version: "1",
+      tables: [
+        {
+          id: "users",
+          name: "users",
+          columns: [{ name: "id", type: "uuid" }],
+        },
+        {
+          id: "posts",
+          name: "posts",
+          columns: [
+            { name: "id", type: "uuid", primaryKey: true },
+            { name: "user_id", type: "uuid", nullable: false },
+          ],
+          constraints: [
+            {
+              name: "posts_user_fk",
+              type: "foreign-key",
+              columns: ["user_id"],
+              referencedTable: "users",
+              referencedColumns: ["id"],
+              onDelete: "cascade",
+            },
+            { name: "posts_user_unique", type: "unique", columns: ["user_id"] },
+            { name: "posts_id_check", type: "check", expression: "length(user_id::text) > 0" },
+          ],
+        },
+      ],
+    });
+
+    expect(artifact.content).toContain('"user_id" UUID NOT NULL');
+    expect(artifact.content).toContain(
+      'CONSTRAINT "posts_user_fk" FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE CASCADE',
+    );
+    expect(artifact.content).toContain('CONSTRAINT "posts_user_unique" UNIQUE ("user_id")');
+    expect(artifact.content).toContain(
+      'CONSTRAINT "posts_id_check" CHECK (length(user_id::text) > 0)',
+    );
+  });
 });
