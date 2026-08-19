@@ -20,9 +20,7 @@
   },
   "dependencies": {
     "@mavibase/core": "workspace:*",
-    "@mavibase/application-graph": "workspace:*"
-  },
-  "devDependencies": {
+    "@mavibase/application-graph": "workspace:*",
     "typescript": "^5.5.0"
   }
 }

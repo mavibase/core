@@ -77,7 +77,6 @@ importers:
       '@mavibase/core':
         specifier: workspace:*
         version: link:../core
-    devDependencies:
       typescript:
         specifier: ^5.5.0
         version: 5.9.3

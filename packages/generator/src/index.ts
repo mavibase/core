@@ -69,6 +69,7 @@ export function generateFromDefinition(
 
 export { slugify };
 export * from "./filesystem.js";
+export * from "./generated-code-testing.js";
 export * from "./model-generator.js";
 export * from "./template.js";
 export * from "./type-generator.js";
