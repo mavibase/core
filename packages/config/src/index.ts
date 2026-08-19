@@ -15,6 +15,9 @@ export type Runtime = "node" | "bun" | "deno";
 /** Database provider */
 export type DatabaseProvider = "postgresql" | "mysql" | "sqlite";
 
+/** Package manager used by the generated project */
+export type PackageManager = "npm" | "pnpm" | "yarn" | "bun";
+
 export interface MavibaseConfig {
   language: Language;
   monorepo?: boolean;
@@ -36,3 +39,4 @@ export function defineConfig(config: MavibaseConfig): MavibaseConfig {
 export * from "./framework.js";
 export * from "./database.js";
 export * from "./runtime.js";
+export * from "./package-manager.js";
