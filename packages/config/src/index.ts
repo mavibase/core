@@ -40,3 +40,5 @@ export * from "./framework.js";
 export * from "./database.js";
 export * from "./runtime.js";
 export * from "./package-manager.js";
+export * from "./stack-compatibility.js";
+export * from "./stack-configuration.js";
