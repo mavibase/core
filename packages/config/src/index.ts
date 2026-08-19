@@ -32,3 +32,5 @@ export interface MavibaseConfig {
 export function defineConfig(config: MavibaseConfig): MavibaseConfig {
   return config;
 }
+
+export * from "./framework.js";
