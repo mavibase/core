@@ -52,7 +52,6 @@ describe("framework definitions", () => {
       "name",
       "category",
       "runtimes[0]",
-      "languages[0]",
       "capabilities[1]",
       "capabilities[2]",
     ]);

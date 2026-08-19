@@ -1,7 +1,7 @@
 export const version = "0.1.0";
 
 /** Language of the generated app */
-export type Language = "typescript";
+export type Language = "javascript" | "typescript";
 
 /** Frontend framework */
 export type WebFramework = "react" | "next";
@@ -34,3 +34,4 @@ export function defineConfig(config: MavibaseConfig): MavibaseConfig {
 }
 
 export * from "./framework.js";
+export * from "./runtime.js";

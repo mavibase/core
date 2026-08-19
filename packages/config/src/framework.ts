@@ -48,7 +48,7 @@ export class FrameworkRegistryError extends Error {
 
 const frameworkCategories: readonly FrameworkCategory[] = ["frontend", "backend", "full-stack"];
 const runtimes: readonly Runtime[] = ["node", "bun", "deno"];
-const languages: readonly Language[] = ["typescript"];
+const languages: readonly Language[] = ["javascript", "typescript"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
