@@ -89,4 +89,32 @@ describe("PostgreSQL generator", () => {
       }),
     ).toThrow(PostgreSQLGeneratorError);
   });
+
+  it("generates composite and unique indexes with stable names", () => {
+    const artifact = generatePostgreSQLSchema({
+      name: "app",
+      version: "1",
+      tables: [
+        {
+          id: "memberships",
+          name: "memberships",
+          columns: [
+            { name: "organization_id", type: "uuid" },
+            { name: "user_id", type: "uuid" },
+          ],
+          indexes: [
+            {
+              name: "memberships_organization_user_uniq",
+              columns: ["organization_id", "user_id"],
+              unique: true,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(artifact.content).toContain(
+      'CREATE UNIQUE INDEX "memberships_organization_user_uniq" ON "memberships" ("organization_id", "user_id");',
+    );
+  });
 });

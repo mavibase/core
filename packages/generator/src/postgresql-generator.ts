@@ -5,6 +5,7 @@ import type {
   DatabaseSchemaDefinition,
   DatabaseTableDefinition,
 } from "@mavibase/core";
+import { createDatabaseIndexName } from "@mavibase/core";
 
 import type { GeneratedFile } from "./index.js";
 
@@ -132,7 +133,10 @@ function indexedColumns(
   const explicitColumns = new Set(explicit.map((index) => index.columns.join("\u0000")));
   const generated = table.columns
     .filter((column) => column.indexed && !explicitColumns.has(column.name))
-    .map((column) => ({ name: `${table.name}_${column.name}_idx`, columns: [column.name] }));
+    .map((column) => ({
+      name: createDatabaseIndexName(table.name, [column.name]),
+      columns: [column.name],
+    }));
   return [...explicit, ...generated].sort((left, right) => left.name.localeCompare(right.name));
 }
 

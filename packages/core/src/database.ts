@@ -20,6 +20,12 @@ export interface DatabaseIndexDefinition {
   unique?: boolean;
 }
 
+export interface DatabaseIndexInput {
+  name?: string;
+  columns: readonly string[];
+  unique?: boolean;
+}
+
 export interface DatabasePrimaryKeyConstraint {
   name: string;
   type: "primary-key";
@@ -82,6 +88,58 @@ export class DatabaseSchemaDefinitionError extends Error {
     this.name = "DatabaseSchemaDefinitionError";
     this.issues = issues;
   }
+}
+
+function indexPart(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+export function createDatabaseIndexName(
+  tableName: string,
+  columns: readonly string[],
+  unique = false,
+): string {
+  const parts = [indexPart(tableName), ...columns.map(indexPart), unique ? "uniq" : "idx"];
+  return parts.filter((part) => part.length > 0).join("_") || "index_idx";
+}
+
+export function defineDatabaseIndex(
+  tableName: string,
+  input: DatabaseIndexInput,
+): DatabaseIndexDefinition {
+  const issues: DatabaseSchemaValidationIssue[] = [];
+  if (!isNonEmptyString(tableName)) {
+    issues.push({ path: "table", message: "Index table name must not be empty." });
+  }
+  if (!Array.isArray(input.columns) || input.columns.length === 0) {
+    issues.push({ path: "columns", message: "Index columns must contain at least one value." });
+  } else {
+    const seen = new Set<string>();
+    for (const [index, column] of input.columns.entries()) {
+      if (!isNonEmptyString(column)) {
+        issues.push({
+          path: `columns[${index}]`,
+          message: "Index columns must contain non-empty strings.",
+        });
+      } else if (seen.has(column)) {
+        issues.push({
+          path: `columns[${index}]`,
+          message: `Index columns must not contain duplicates: "${column}".`,
+        });
+      }
+      seen.add(column);
+    }
+  }
+  if (issues.length > 0) throw new DatabaseSchemaDefinitionError(issues);
+  return {
+    name: input.name ?? createDatabaseIndexName(tableName, input.columns, input.unique),
+    columns: [...input.columns],
+    ...(input.unique === undefined ? {} : { unique: input.unique }),
+  };
 }
 
 const scalarTypes: readonly DatabaseScalarType[] = [
@@ -247,6 +305,15 @@ export function validateDatabaseSchemaDefinition(
         names.add(name);
         if (key === "indexes") {
           validateReferences(value["columns"], columns, `${path}.columns`, issues);
+          if (
+            Array.isArray(value["columns"]) &&
+            new Set(value["columns"]).size !== value["columns"].length
+          ) {
+            issues.push({
+              path: `${path}.columns`,
+              message: "Index columns must not contain duplicates.",
+            });
+          }
           if (value["unique"] !== undefined && typeof value["unique"] !== "boolean") {
             issues.push({
               path: `${path}.unique`,

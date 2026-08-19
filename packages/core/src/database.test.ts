@@ -1,12 +1,35 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createDatabaseIndexName,
   DatabaseSchemaDefinitionError,
+  defineDatabaseIndex,
   defineDatabaseSchema,
   validateDatabaseSchemaDefinition,
 } from "./database.js";
 
 describe("database schema abstraction", () => {
+  it("creates deterministic explicit and generated index definitions", () => {
+    expect(createDatabaseIndexName("User Accounts", ["tenant_id", "email"], true)).toBe(
+      "user_accounts_tenant_id_email_uniq",
+    );
+    expect(defineDatabaseIndex("users", { columns: ["email"] })).toEqual({
+      name: "users_email_idx",
+      columns: ["email"],
+    });
+    expect(
+      defineDatabaseIndex("users", {
+        name: "users_email_unique",
+        columns: ["email"],
+        unique: true,
+      }),
+    ).toEqual({
+      name: "users_email_unique",
+      columns: ["email"],
+      unique: true,
+    });
+  });
+
   it("normalizes valid tables, columns, indexes, and constraints deterministically", () => {
     const schema = defineDatabaseSchema({
       name: "application",
@@ -51,6 +74,9 @@ describe("database schema abstraction", () => {
 
   it("rejects invalid definitions with structured errors", () => {
     expect(() => defineDatabaseSchema({ name: "", version: "", tables: [] })).toThrow(
+      DatabaseSchemaDefinitionError,
+    );
+    expect(() => defineDatabaseIndex("users", { columns: ["email", "email"] })).toThrow(
       DatabaseSchemaDefinitionError,
     );
   });
