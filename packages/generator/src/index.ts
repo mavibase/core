@@ -3,6 +3,7 @@ import type { ApplicationGraph } from "@mavibase/application-graph";
 import { buildGraph } from "@mavibase/application-graph";
 
 import { generateModels } from "./model-generator.js";
+import { generateZodSchemas } from "./zod-generator.js";
 
 export const version = "0.1.0";
 
@@ -36,6 +37,12 @@ export function generate(graph: ApplicationGraph, options?: GenerateOptions): Ge
     artifacts.push(modelFile);
   }
 
+  const zodFile = generateZodSchemas(graph);
+
+  if (zodFile) {
+    artifacts.push(zodFile);
+  }
+
   const outDir = options?.outDir ?? "generated";
 
   return {
@@ -57,3 +64,4 @@ export { slugify };
 export * from "./filesystem.js";
 export * from "./model-generator.js";
 export * from "./template.js";
+export * from "./zod-generator.js";
