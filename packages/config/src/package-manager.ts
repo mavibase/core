@@ -13,12 +13,18 @@ export interface PackageManagerFileMetadata {
   lockfiles: readonly string[];
 }
 
+export interface PackageManagerWorkspaceMetadata {
+  manifestField?: string;
+  configFile?: string;
+}
+
 export interface PackageManagerDefinition {
   id: PackageManager;
   name: string;
   supportedVersions: readonly string[];
   commands: PackageManagerCommands;
   files: PackageManagerFileMetadata;
+  workspace?: PackageManagerWorkspaceMetadata;
   capabilities?: readonly string[];
 }
 
@@ -170,6 +176,7 @@ export function definePackageManager(
       ...definition.files,
       lockfiles: [...definition.files.lockfiles],
     },
+    ...(definition.workspace ? { workspace: { ...definition.workspace } } : {}),
     ...(definition.capabilities ? { capabilities: [...definition.capabilities] } : {}),
   };
 }
@@ -234,6 +241,7 @@ export const builtInPackageManagerDefinitions: readonly PackageManagerDefinition
       exec: "npx",
     },
     files: { manifest: "package.json", lockfiles: ["package-lock.json"] },
+    workspace: { manifestField: "workspaces" },
     capabilities: ["workspaces", "package-scripts"],
   },
   {
@@ -248,6 +256,7 @@ export const builtInPackageManagerDefinitions: readonly PackageManagerDefinition
       exec: "pnpm exec",
     },
     files: { manifest: "package.json", lockfiles: ["pnpm-lock.yaml"] },
+    workspace: { configFile: "pnpm-workspace.yaml" },
     capabilities: ["workspaces", "package-scripts", "content-addressable-store"],
   },
   {
@@ -262,6 +271,7 @@ export const builtInPackageManagerDefinitions: readonly PackageManagerDefinition
       exec: "yarn dlx",
     },
     files: { manifest: "package.json", lockfiles: ["yarn.lock"] },
+    workspace: { manifestField: "workspaces" },
     capabilities: ["workspaces", "package-scripts", "plug-and-play"],
   },
   {
@@ -276,6 +286,7 @@ export const builtInPackageManagerDefinitions: readonly PackageManagerDefinition
       exec: "bunx",
     },
     files: { manifest: "package.json", lockfiles: ["bun.lock"] },
+    workspace: { manifestField: "workspaces" },
     capabilities: ["workspaces", "package-scripts", "runtime-integration"],
   },
 ];

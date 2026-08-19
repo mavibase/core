@@ -16,6 +16,8 @@ export interface DatabaseProviderDefinition {
   capabilities: readonly string[];
   configuration?: readonly DatabaseConfigurationRequirement[];
   generator?: string;
+  dependencies?: readonly string[];
+  dependencyVersions?: Readonly<Record<string, string>>;
 }
 
 export interface DatabaseValidationIssue {
@@ -167,6 +169,15 @@ export function validateDatabaseProviderDefinition(definition: unknown): Databas
     });
   }
 
+  if (definition["dependencies"] !== undefined) {
+    validateStringList(
+      definition["dependencies"],
+      "dependencies",
+      "Database provider dependencies",
+      issues,
+    );
+  }
+
   return issues;
 }
 
@@ -184,6 +195,10 @@ export function defineDatabaseProvider(
     capabilities: [...definition.capabilities],
     ...(definition.configuration
       ? { configuration: definition.configuration.map((requirement) => ({ ...requirement })) }
+      : {}),
+    ...(definition.dependencies ? { dependencies: [...definition.dependencies] } : {}),
+    ...(definition.dependencyVersions
+      ? { dependencyVersions: { ...definition.dependencyVersions } }
       : {}),
   };
 }
@@ -261,6 +276,8 @@ export const builtInDatabaseProviderDefinitions: readonly DatabaseProviderDefini
     ],
     configuration: [{ key: "DATABASE_URL", required: true }],
     generator: "database-postgresql",
+    dependencies: ["pg"],
+    dependencyVersions: { pg: "^8.0.0" },
   },
   {
     id: "mysql",
@@ -282,6 +299,8 @@ export const builtInDatabaseProviderDefinitions: readonly DatabaseProviderDefini
     ],
     configuration: [{ key: "DATABASE_URL", required: true }],
     generator: "database-mysql",
+    dependencies: ["mysql2"],
+    dependencyVersions: { mysql2: "^3.0.0" },
   },
   {
     id: "sqlite",
@@ -301,6 +320,8 @@ export const builtInDatabaseProviderDefinitions: readonly DatabaseProviderDefini
     ],
     configuration: [{ key: "DATABASE_PATH", required: true }],
     generator: "database-sqlite",
+    dependencies: ["better-sqlite3"],
+    dependencyVersions: { "better-sqlite3": "^11.0.0" },
   },
 ];
 

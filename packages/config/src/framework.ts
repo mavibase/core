@@ -19,6 +19,8 @@ export interface FrameworkDefinition {
   generator?: string;
   version?: string;
   supportedVersions?: readonly string[];
+  dependencies?: readonly string[];
+  dependencyVersions?: Readonly<Record<string, string>>;
 }
 
 export interface FrameworkValidationIssue {
@@ -191,6 +193,15 @@ export function validateFrameworkDefinition(definition: unknown): FrameworkValid
     );
   }
 
+  if (definition["dependencies"] !== undefined) {
+    validateStringList(
+      definition["dependencies"],
+      "dependencies",
+      "Framework dependencies",
+      issues,
+    );
+  }
+
   return issues;
 }
 
@@ -210,6 +221,10 @@ export function defineFramework(definition: FrameworkDefinition): FrameworkDefin
       : {}),
     ...(definition.supportedVersions
       ? { supportedVersions: [...definition.supportedVersions] }
+      : {}),
+    ...(definition.dependencies ? { dependencies: [...definition.dependencies] } : {}),
+    ...(definition.dependencyVersions
+      ? { dependencyVersions: { ...definition.dependencyVersions } }
       : {}),
   };
 }
@@ -268,6 +283,8 @@ export const builtInFrameworkDefinitions: readonly FrameworkDefinition[] = [
     languages: ["typescript"],
     capabilities: ["client-rendering", "component-based-ui"],
     generator: "frontend-react",
+    dependencies: ["react", "react-dom"],
+    dependencyVersions: { react: "^19.0.0", "react-dom": "^19.0.0" },
   },
   {
     id: "express",
@@ -277,6 +294,8 @@ export const builtInFrameworkDefinitions: readonly FrameworkDefinition[] = [
     languages: ["typescript"],
     capabilities: ["http-server", "routing", "middleware"],
     generator: "backend-express",
+    dependencies: ["express"],
+    dependencyVersions: { express: "^5.0.0" },
   },
   {
     id: "fastify",
@@ -286,6 +305,8 @@ export const builtInFrameworkDefinitions: readonly FrameworkDefinition[] = [
     languages: ["typescript"],
     capabilities: ["http-server", "routing", "schema-validation"],
     generator: "backend-fastify",
+    dependencies: ["fastify"],
+    dependencyVersions: { fastify: "^5.0.0" },
   },
   {
     id: "nextjs",

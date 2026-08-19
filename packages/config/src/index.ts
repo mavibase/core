@@ -4,10 +4,10 @@ export const version = "0.1.0";
 export type Language = "javascript" | "typescript";
 
 /** Frontend framework */
-export type WebFramework = "react" | "next";
+export type WebFramework = "react" | "next" | "nextjs" | "vue" | "svelte";
 
 /** Backend framework */
-export type BackendFramework = "express";
+export type BackendFramework = "express" | "fastify" | "nestjs" | "hono";
 
 /** Runtime used by the app */
 export type Runtime = "node" | "bun" | "deno";
@@ -18,9 +18,25 @@ export type DatabaseProvider = "postgresql" | "mysql" | "sqlite";
 /** Package manager used by the generated project */
 export type PackageManager = "npm" | "pnpm" | "yarn" | "bun";
 
+import type { StackConfiguration } from "./stack-configuration.js";
+
 export interface MavibaseConfig {
   language: Language;
+  projectName?: string;
+  stackId?: string;
   monorepo?: boolean;
+  stack?: StackConfiguration;
+
+  applications?: {
+    web?: {
+      name: string;
+      framework: string;
+    };
+    api?: {
+      name: string;
+      framework: string;
+    };
+  };
 
   web?: {
     framework: WebFramework;
