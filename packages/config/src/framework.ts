@@ -283,8 +283,13 @@ export const builtInFrameworkDefinitions: readonly FrameworkDefinition[] = [
     languages: ["typescript"],
     capabilities: ["client-rendering", "component-based-ui"],
     generator: "frontend-react",
-    dependencies: ["react", "react-dom"],
-    dependencyVersions: { react: "^19.0.0", "react-dom": "^19.0.0" },
+    dependencies: ["react", "react-dom", "vite", "@vitejs/plugin-react"],
+    dependencyVersions: {
+      react: "^19.0.0",
+      "react-dom": "^19.0.0",
+      vite: "^7.0.0",
+      "@vitejs/plugin-react": "^5.0.0",
+    },
   },
   {
     id: "express",
@@ -294,8 +299,8 @@ export const builtInFrameworkDefinitions: readonly FrameworkDefinition[] = [
     languages: ["typescript"],
     capabilities: ["http-server", "routing", "middleware"],
     generator: "backend-express",
-    dependencies: ["express"],
-    dependencyVersions: { express: "^5.0.0" },
+    dependencies: ["express", "dotenv"],
+    dependencyVersions: { express: "^5.0.0", dotenv: "^16.0.0" },
   },
   {
     id: "fastify",
@@ -305,8 +310,8 @@ export const builtInFrameworkDefinitions: readonly FrameworkDefinition[] = [
     languages: ["typescript"],
     capabilities: ["http-server", "routing", "schema-validation"],
     generator: "backend-fastify",
-    dependencies: ["fastify"],
-    dependencyVersions: { fastify: "^5.0.0" },
+    dependencies: ["fastify", "dotenv"],
+    dependencyVersions: { fastify: "^5.0.0", dotenv: "^16.0.0" },
   },
   {
     id: "nextjs",
@@ -316,6 +321,12 @@ export const builtInFrameworkDefinitions: readonly FrameworkDefinition[] = [
     languages: ["typescript"],
     capabilities: ["client-rendering", "server-rendering", "routing"],
     generator: "full-stack-nextjs",
+    dependencies: ["next", "react", "react-dom"],
+    dependencyVersions: {
+      next: "^15.0.0",
+      react: "^19.0.0",
+      "react-dom": "^19.0.0",
+    },
   },
   {
     id: "vue",
@@ -325,6 +336,12 @@ export const builtInFrameworkDefinitions: readonly FrameworkDefinition[] = [
     languages: ["typescript"],
     capabilities: ["client-rendering", "component-based-ui"],
     generator: "frontend-vue",
+    dependencies: ["vue", "vite", "@vitejs/plugin-vue"],
+    dependencyVersions: {
+      vue: "^3.5.0",
+      vite: "^7.0.0",
+      "@vitejs/plugin-vue": "^6.0.0",
+    },
   },
   {
     id: "svelte",
@@ -334,6 +351,12 @@ export const builtInFrameworkDefinitions: readonly FrameworkDefinition[] = [
     languages: ["typescript"],
     capabilities: ["client-rendering", "component-based-ui"],
     generator: "frontend-svelte",
+    dependencies: ["svelte", "vite", "@sveltejs/vite-plugin-svelte"],
+    dependencyVersions: {
+      svelte: "^5.0.0",
+      vite: "^7.0.0",
+      "@sveltejs/vite-plugin-svelte": "^6.0.0",
+    },
   },
   {
     id: "nestjs",
@@ -343,6 +366,22 @@ export const builtInFrameworkDefinitions: readonly FrameworkDefinition[] = [
     languages: ["typescript"],
     capabilities: ["http-server", "routing", "dependency-injection"],
     generator: "backend-nestjs",
+    dependencies: [
+      "@nestjs/common",
+      "@nestjs/core",
+      "@nestjs/platform-express",
+      "reflect-metadata",
+      "rxjs",
+      "dotenv",
+    ],
+    dependencyVersions: {
+      "@nestjs/common": "^11.0.0",
+      "@nestjs/core": "^11.0.0",
+      "@nestjs/platform-express": "^11.0.0",
+      "reflect-metadata": "^0.2.0",
+      rxjs: "^7.0.0",
+      dotenv: "^16.0.0",
+    },
   },
   {
     id: "hono",
@@ -352,6 +391,8 @@ export const builtInFrameworkDefinitions: readonly FrameworkDefinition[] = [
     languages: ["typescript"],
     capabilities: ["http-server", "routing", "edge-runtime"],
     generator: "backend-hono",
+    dependencies: ["hono", "@hono/node-server", "dotenv"],
+    dependencyVersions: { hono: "^4.0.0", "@hono/node-server": "^1.0.0", dotenv: "^16.0.0" },
   },
 ];
 

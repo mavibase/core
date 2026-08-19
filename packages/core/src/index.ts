@@ -8,6 +8,8 @@ import type {
 
 export const version = "0.1.0";
 
+export * from "./database.js";
+
 export type AppEnvironment = "development" | "test" | "production";
 
 export interface AppFeatures {
