@@ -93,3 +93,4 @@ export function generateFromDefinition(
 
 export { slugify };
 export * from "./filesystem.js";
+export * from "./template.js";
