@@ -13,6 +13,7 @@ export const version = "0.1.0";
 
 export * from "./routes.js";
 export * from "./parameters.js";
+export * from "./responses.js";
 
 export * from "./database.js";
 
@@ -380,6 +381,7 @@ export function validateDefinition(definition: unknown): ValidationIssue[] {
     const method = routeObj["method"];
     const path = routeObj["path"];
     const parameters = routeObj["parameters"];
+    const responses = routeObj["responses"];
 
     if (typeof routeName !== "string" || !routeName.trim()) {
       issues.push({ path: "routes.name", message: "Route name must not be empty." });
@@ -409,6 +411,37 @@ export function validateDefinition(definition: unknown): ValidationIssue[] {
           path: `routes.${String(routeName)}.${issue.path}`,
           message: issue.message,
         });
+      }
+    }
+    if (Array.isArray(responses)) {
+      const statuses = new Set<number>();
+      for (const [index, response] of responses.entries()) {
+        if (!response || typeof response !== "object") continue;
+        const responseObj = response as Record<string, unknown>;
+        const status = responseObj["status"];
+        if (!Number.isInteger(status) || Number(status) < 100 || Number(status) > 599) {
+          issues.push({
+            path: `routes.${String(routeName)}.responses[${index}].status`,
+            message: `Invalid response status: "${String(status)}".`,
+          });
+        } else if (statuses.has(Number(status))) {
+          issues.push({
+            path: `routes.${String(routeName)}.responses[${index}].status`,
+            message: `Duplicate route response status: "${status}".`,
+          });
+        } else {
+          statuses.add(Number(status));
+        }
+        const schema = responseObj["schema"];
+        if (
+          schema !== undefined &&
+          (typeof schema !== "string" || !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(schema))
+        ) {
+          issues.push({
+            path: `routes.${String(routeName)}.responses[${index}].schema`,
+            message: `Invalid response schema reference: "${String(schema)}".`,
+          });
+        }
       }
     }
     if (typeof method === "string" && typeof path === "string") {

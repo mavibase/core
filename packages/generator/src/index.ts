@@ -10,6 +10,7 @@ import { assertModelGenerationValid } from "./model-generation-validation.js";
 import { generateTypes } from "./type-generator.js";
 import { generateZodSchemas } from "./zod-generator.js";
 import { generateRouteValidation } from "./route-validation-generator.js";
+import { generateRouteResponses } from "./route-response-generator.js";
 
 export const version = "0.1.0";
 
@@ -45,6 +46,7 @@ function structuredArtifact(artifact: GeneratedFile): GeneratedFile {
     "schemas.ts": "schemas/index.ts",
     "types.ts": "types/index.ts",
     "route-schemas.ts": "routes/schemas.ts",
+    "route-responses.ts": "routes/responses.ts",
   };
   const path = paths[artifact.path] ?? artifact.path;
   let content = artifact.content;
@@ -57,6 +59,9 @@ function structuredArtifact(artifact: GeneratedFile): GeneratedFile {
     content = content.replaceAll('from "./schemas.js"', 'from "../schemas/index.js"');
   }
   if (artifact.path === "route-schemas.ts") {
+    content = content.replaceAll('from "./schemas.js"', 'from "../schemas/index.js"');
+  }
+  if (artifact.path === "route-responses.ts") {
     content = content.replaceAll('from "./schemas.js"', 'from "../schemas/index.js"');
   }
 
@@ -118,6 +123,12 @@ export function generate(graph: ApplicationGraph, options?: GenerateOptions): Ge
     artifacts.push(routeValidationFile);
   }
 
+  const routeResponsesFile = generateRouteResponses(graph);
+
+  if (routeResponsesFile) {
+    artifacts.push(routeResponsesFile);
+  }
+
   const outDir = options?.outDir ?? "generated";
   const outputArtifacts =
     options?.layout === "structured" ? artifacts.map(structuredArtifact) : artifacts;
@@ -156,3 +167,4 @@ export * from "./template.js";
 export * from "./type-generator.js";
 export * from "./zod-generator.js";
 export * from "./route-validation-generator.js";
+export * from "./route-response-generator.js";

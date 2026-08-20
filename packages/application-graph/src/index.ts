@@ -220,6 +220,7 @@ export function buildGraph(definition: ApplicationDefinition): ApplicationGraph 
         path: route.path,
         ...(route.description === undefined ? {} : { description: route.description }),
         ...(route.parameters === undefined ? {} : { parameters: route.parameters }),
+        ...(route.responses === undefined ? {} : { responses: route.responses }),
       }),
     );
     edges.push(createEdge(appId, routeId, "contains"));
