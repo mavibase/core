@@ -8,7 +8,14 @@ import {
   validateGraph,
   version,
 } from "./index.js";
-import { defineApp, defineModel, defineRoute, field, relationship } from "@mavibase/core";
+import {
+  defineApp,
+  defineModel,
+  defineParameter,
+  defineRoute,
+  field,
+  relationship,
+} from "@mavibase/core";
 
 describe("application-graph", () => {
   it("exports a version", () => {
@@ -282,6 +289,7 @@ describe("application-graph", () => {
           method: "GET",
           path: "/users",
           description: "List users",
+          parameters: [defineParameter({ name: "limit", location: "query", type: "integer" })],
         }),
       ],
     });
@@ -297,6 +305,7 @@ describe("application-graph", () => {
         method: "GET",
         path: "/users",
         description: "List users",
+        parameters: [{ name: "limit", location: "query", required: false, type: "integer" }],
       },
     });
     expect(graph.edges).toContainEqual({

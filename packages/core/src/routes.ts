@@ -8,6 +8,7 @@ export interface RouteDefinition {
   method: RouteMethod;
   path: string;
   description?: string;
+  parameters?: RouteParameterDefinition[];
 }
 
 export interface DefineRouteInput {
@@ -16,6 +17,7 @@ export interface DefineRouteInput {
   method: RouteMethod;
   path: string;
   description?: string;
+  parameters?: RouteParameterDefinition[] | DefineParameterInput[];
 }
 
 export function isRouteMethod(value: unknown): value is RouteMethod {
@@ -32,6 +34,11 @@ export function defineRoute(input: DefineRouteInput): RouteDefinition {
   if (!input.path.startsWith("/") || input.path.includes("//")) {
     throw new Error(`Invalid route path: "${input.path}".`);
   }
+  const parameters = input.parameters ?? [];
+  const parameterIssues = validateRouteParameters(input.path, parameters);
+  if (parameterIssues.length > 0) {
+    throw new Error(parameterIssues[0]?.message ?? "Invalid route parameter.");
+  }
 
   return {
     id: input.id ?? `${input.method.toLowerCase()}:${input.name}`,
@@ -39,5 +46,11 @@ export function defineRoute(input: DefineRouteInput): RouteDefinition {
     method: input.method,
     path: input.path,
     ...(input.description === undefined ? {} : { description: input.description }),
+    ...(parameters.length === 0 ? {} : { parameters: parameters as RouteParameterDefinition[] }),
   };
 }
+import {
+  validateRouteParameters,
+  type DefineParameterInput,
+  type RouteParameterDefinition,
+} from "./parameters.js";

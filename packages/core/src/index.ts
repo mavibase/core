@@ -7,10 +7,12 @@ import type {
 } from "@mavibase/config";
 
 import { isRouteMethod, type RouteDefinition } from "./routes.js";
+import { validateRouteParameters, type DefineParameterInput } from "./parameters.js";
 
 export const version = "0.1.0";
 
 export * from "./routes.js";
+export * from "./parameters.js";
 
 export * from "./database.js";
 
@@ -377,6 +379,7 @@ export function validateDefinition(definition: unknown): ValidationIssue[] {
     const routeName = routeObj["name"];
     const method = routeObj["method"];
     const path = routeObj["path"];
+    const parameters = routeObj["parameters"];
 
     if (typeof routeName !== "string" || !routeName.trim()) {
       issues.push({ path: "routes.name", message: "Route name must not be empty." });
@@ -399,6 +402,14 @@ export function validateDefinition(definition: unknown): ValidationIssue[] {
         path: `routes.${String(routeName)}.path`,
         message: `Invalid route path: "${String(path)}".`,
       });
+    }
+    if (Array.isArray(parameters) && typeof path === "string") {
+      for (const issue of validateRouteParameters(path, parameters as DefineParameterInput[])) {
+        issues.push({
+          path: `routes.${String(routeName)}.${issue.path}`,
+          message: issue.message,
+        });
+      }
     }
     if (typeof method === "string" && typeof path === "string") {
       const signature = `${method} ${path}`;

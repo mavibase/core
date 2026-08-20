@@ -219,6 +219,7 @@ export function buildGraph(definition: ApplicationDefinition): ApplicationGraph 
         method: route.method,
         path: route.path,
         ...(route.description === undefined ? {} : { description: route.description }),
+        ...(route.parameters === undefined ? {} : { parameters: route.parameters }),
       }),
     );
     edges.push(createEdge(appId, routeId, "contains"));
