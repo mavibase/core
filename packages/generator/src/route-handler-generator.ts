@@ -64,12 +64,17 @@ function routeData(
 }
 
 function expressTemplate(data: RouteHandlerTemplateData): string {
-  const lines = ['import type { Request, Response } from "express";', ""];
+  const lines = [
+    'import type { Request, Response } from "express";',
+    'import { notImplementedError } from "./api-errors.js";',
+    "",
+  ];
   for (const route of data.routes) {
     lines.push(
       `export async function ${route.handlerName}(request: Request, response: Response): Promise<void> {`,
       "  void request;",
-      '  response.status(501).json({ error: "Not implemented" });',
+      "  const error = notImplementedError();",
+      "  response.status(error.status).json(error);",
       "}",
       "",
     );
@@ -78,12 +83,17 @@ function expressTemplate(data: RouteHandlerTemplateData): string {
 }
 
 function fastifyTemplate(data: RouteHandlerTemplateData): string {
-  const lines = ['import type { FastifyReply, FastifyRequest } from "fastify";', ""];
+  const lines = [
+    'import type { FastifyReply, FastifyRequest } from "fastify";',
+    'import { notImplementedError } from "./api-errors.js";',
+    "",
+  ];
   for (const route of data.routes) {
     lines.push(
       `export async function ${route.handlerName}(request: FastifyRequest, reply: FastifyReply): Promise<void> {`,
       "  void request;",
-      '  await reply.code(501).send({ error: "Not implemented" });',
+      "  const error = notImplementedError();",
+      "  await reply.code(error.status).send(error);",
       "}",
       "",
     );
@@ -92,11 +102,16 @@ function fastifyTemplate(data: RouteHandlerTemplateData): string {
 }
 
 function honoTemplate(data: RouteHandlerTemplateData): string {
-  const lines = ['import type { Context } from "hono";', ""];
+  const lines = [
+    'import type { Context } from "hono";',
+    'import { notImplementedError } from "./api-errors.js";',
+    "",
+  ];
   for (const route of data.routes) {
     lines.push(
       `export async function ${route.handlerName}(context: Context): Promise<Response> {`,
-      '  return context.json({ error: "Not implemented" }, 501);',
+      "  const error = notImplementedError();",
+      "  return context.json(error, 501);",
       "}",
       "",
     );
@@ -110,6 +125,7 @@ function nestjsTemplate(data: RouteHandlerTemplateData): string {
     .sort();
   const lines = [
     `import { Controller, ${decorators.join(", ")} } from "@nestjs/common";`,
+    'import { notImplementedError } from "./api-errors.js";',
     "",
     "@Controller()",
     "export class MavibaseController {",
@@ -118,8 +134,8 @@ function nestjsTemplate(data: RouteHandlerTemplateData): string {
     const decorator = route.method[0]?.toUpperCase() + route.method.slice(1).toLowerCase();
     lines.push(
       `  @${decorator}(${JSON.stringify(route.path)})`,
-      `  async ${route.handlerName}(): Promise<{ error: string }> {`,
-      '    return { error: "Not implemented" };',
+      `  async ${route.handlerName}(): Promise<ReturnType<typeof notImplementedError>> {`,
+      "    return notImplementedError();",
       "  }",
       "",
     );

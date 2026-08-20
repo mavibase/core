@@ -14,6 +14,7 @@ export const version = "0.1.0";
 export * from "./routes.js";
 export * from "./parameters.js";
 export * from "./responses.js";
+export * from "./middleware.js";
 
 export * from "./database.js";
 

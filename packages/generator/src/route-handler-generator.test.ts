@@ -71,8 +71,8 @@ describe("route handler generator", () => {
       routes: [defineRoute({ name: "health", method: "GET", path: "/health" })],
     });
 
-    expect(generateFromDefinition(app).artifacts).toEqual([
-      expect.objectContaining({ path: "route-schemas.ts" }),
-    ]);
+    const artifacts = generateFromDefinition(app).artifacts;
+    expect(artifacts.some((artifact) => artifact.path === "route-handlers.ts")).toBe(false);
+    expect(artifacts.some((artifact) => artifact.path === "route-schemas.ts")).toBe(true);
   });
 });

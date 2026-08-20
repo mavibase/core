@@ -1,3 +1,5 @@
+import { defineMiddleware } from "./middleware.js";
+
 export const routeMethods = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 
 export type RouteMethod = (typeof routeMethods)[number];
@@ -10,6 +12,7 @@ export interface RouteDefinition {
   description?: string;
   parameters?: RouteParameterDefinition[];
   responses?: import("./responses.js").RouteResponseDefinition[];
+  middleware?: import("./middleware.js").MiddlewareDefinition[];
 }
 
 export interface DefineRouteInput {
@@ -22,6 +25,9 @@ export interface DefineRouteInput {
   responses?:
     | import("./responses.js").RouteResponseDefinition[]
     | import("./responses.js").DefineResponseInput[];
+  middleware?:
+    | import("./middleware.js").MiddlewareDefinition[]
+    | import("./middleware.js").DefineMiddlewareInput[];
 }
 
 export function isRouteMethod(value: unknown): value is RouteMethod {
@@ -54,6 +60,14 @@ export function defineRoute(input: DefineRouteInput): RouteDefinition {
     }
     responseStatuses.add(response.status);
   }
+  const middleware = (input.middleware ?? []).map((item) => defineMiddleware(item));
+  const middlewareIds = new Set<string>();
+  for (const item of middleware) {
+    if (middlewareIds.has(item.id)) {
+      throw new Error(`Duplicate route middleware: "${item.id}".`);
+    }
+    middlewareIds.add(item.id);
+  }
 
   return {
     id: input.id ?? `${input.method.toLowerCase()}:${input.name}`,
@@ -63,6 +77,7 @@ export function defineRoute(input: DefineRouteInput): RouteDefinition {
     ...(input.description === undefined ? {} : { description: input.description }),
     ...(parameters.length === 0 ? {} : { parameters: parameters as RouteParameterDefinition[] }),
     ...(responses.length === 0 ? {} : { responses }),
+    ...(middleware.length === 0 ? {} : { middleware }),
   };
 }
 import {
