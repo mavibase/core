@@ -10,6 +10,10 @@ import { createDefaultStackRegistries } from "@mavibase/config";
 import { isRouteMethod, type RouteDefinition } from "./routes.js";
 import { validateRouteParameters, type DefineParameterInput } from "./parameters.js";
 
+import type { Diagnostic, ValidationResult } from "./diagnostics.js";
+
+export * from "./diagnostics.js";
+
 export const version = "0.1.0";
 
 export * from "./routes.js";
@@ -801,6 +805,74 @@ export function validateDefinition(definition: unknown): ValidationIssue[] {
   }
 
   return issues;
+}
+
+function diagnosticCode(issue: ValidationIssue): string {
+  const path = issue.path;
+  const message = issue.message;
+
+  if (path === "definition") return "definition.invalid-shape";
+  if (path === "name") return "definition.invalid-name";
+  if (path === "version") return "definition.invalid-version";
+  if (path === "environment") return "definition.invalid-environment";
+  if (path === "stack" || path.startsWith("stack.")) return "definition.invalid-stack";
+  if (path === "features" || path.startsWith("features.")) return "definition.invalid-features";
+  if (path === "definitions") return "definition.invalid-registry";
+  if (path === "models" || path.startsWith("models.")) {
+    if (message.startsWith("Duplicate model name:")) return "definition.duplicate-model";
+    if (path.endsWith(".type")) return "definition.invalid-field-type";
+    if (path.endsWith(".model")) return "definition.missing-reference";
+    return "definition.invalid-model";
+  }
+  if (path === "routes" || path.startsWith("routes.")) {
+    if (message.startsWith("Duplicate route name:")) return "definition.duplicate-route";
+    if (message.startsWith("Duplicate route method and path:")) {
+      return "definition.duplicate-route-signature";
+    }
+    return "definition.invalid-route";
+  }
+  return "definition.invalid";
+}
+
+function issueToDiagnostic(issue: ValidationIssue): Diagnostic {
+  return {
+    severity: "error",
+    code: diagnosticCode(issue),
+    message: issue.message,
+    path: issue.path,
+  };
+}
+
+function normalizedDefinition(definition: ApplicationDefinition): ApplicationDefinition {
+  return {
+    ...definition,
+    models: definition.models ?? [],
+    routes: definition.routes ?? [],
+    definitions: definition.definitions ?? {},
+  };
+}
+
+export function validateDefinitionResult(
+  definition: unknown,
+): ValidationResult<ApplicationDefinition> {
+  const issues = validateDefinition(definition);
+  const diagnostics = issues.map(issueToDiagnostic);
+
+  if (diagnostics.length > 0) {
+    return { valid: false, diagnostics };
+  }
+
+  return {
+    valid: true,
+    value: normalizedDefinition(definition as ApplicationDefinition),
+    diagnostics,
+  };
+}
+
+export function normalizeDefinition(
+  definition: unknown,
+): ValidationResult<ApplicationDefinition> {
+  return validateDefinitionResult(definition);
 }
 
 /** Define a Mavibase application */
