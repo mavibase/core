@@ -14,6 +14,7 @@ export const version = "0.1.0";
 
 export interface GenerateOptions {
   outDir?: string;
+  layout?: "flat" | "structured";
 }
 
 export interface GeneratedFile {
@@ -31,6 +32,30 @@ function slugify(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+function structuredArtifact(artifact: GeneratedFile): GeneratedFile {
+  const paths: Readonly<Record<string, string>> = {
+    "models.ts": "models/index.ts",
+    "model-metadata.ts": "models/metadata.ts",
+    "relationships.ts": "models/relationships.ts",
+    "model-tests.ts": "models/tests.ts",
+    "query-helpers.ts": "queries/index.ts",
+    "schemas.ts": "schemas/index.ts",
+    "types.ts": "types/index.ts",
+  };
+  const path = paths[artifact.path] ?? artifact.path;
+  let content = artifact.content;
+
+  if (artifact.path === "query-helpers.ts") {
+    content = content.replaceAll('from "./types.js"', 'from "../types/index.js"');
+  }
+  if (artifact.path === "model-tests.ts") {
+    content = content.replaceAll('from "./model-metadata.js"', 'from "./metadata.js"');
+    content = content.replaceAll('from "./schemas.js"', 'from "../schemas/index.js"');
+  }
+
+  return { path, content };
 }
 
 export function generate(graph: ApplicationGraph, options?: GenerateOptions): GenerateResult {
@@ -83,10 +108,12 @@ export function generate(graph: ApplicationGraph, options?: GenerateOptions): Ge
   }
 
   const outDir = options?.outDir ?? "generated";
+  const outputArtifacts =
+    options?.layout === "structured" ? artifacts.map(structuredArtifact) : artifacts;
 
   return {
-    files: artifacts.map((artifact) => `${outDir}/${artifact.path}`),
-    artifacts,
+    files: outputArtifacts.map((artifact) => `${outDir}/${artifact.path}`),
+    artifacts: outputArtifacts,
   };
 }
 

@@ -67,6 +67,30 @@ describe("generated-code testing", () => {
     expect(result.diagnostics.some((diagnostic) => diagnostic.includes("broken.ts"))).toBe(true);
   });
 
+  it("compiles structured generated artifacts with resolved imports", async () => {
+    const definition = defineApp({
+      name: "structured-verification-app",
+      version: "1.0.0",
+      environment: "test",
+      stack: { language: "typescript", runtime: "node" },
+      models: [defineModel({ name: "User", fields: { id: field.uuid() } })],
+    });
+    const result = generateFromDefinition(definition, { layout: "structured" });
+
+    const verification = await assertGeneratedArtifacts(result.artifacts, {
+      expectedPaths: [
+        "models/index.ts",
+        "models/metadata.ts",
+        "models/tests.ts",
+        "queries/index.ts",
+        "schemas/index.ts",
+        "types/index.ts",
+      ],
+    });
+
+    expect(verification.valid).toBe(true);
+  });
+
   it("reports unexpected artifact paths", async () => {
     const result = await verifyGeneratedArtifacts(
       [{ path: "models.ts", content: "export interface User {}\n" }],

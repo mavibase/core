@@ -106,6 +106,37 @@ describe("generator", () => {
     ]);
   });
 
+  it("supports deterministic structured artifact output", () => {
+    const User = defineModel({ name: "User" });
+    const app = defineApp({
+      name: "structured-app",
+      version: "1.0.0",
+      environment: "development",
+      stack: { language: "typescript", runtime: "node" },
+      models: [User],
+    });
+
+    const result = generateFromDefinition(app, { layout: "structured" });
+
+    expect(result.files).toEqual([
+      "generated/models/index.ts",
+      "generated/models/metadata.ts",
+      "generated/queries/index.ts",
+      "generated/schemas/index.ts",
+      "generated/types/index.ts",
+      "generated/models/tests.ts",
+    ]);
+    expect(
+      result.artifacts.find((artifact) => artifact.path === "queries/index.ts")?.content,
+    ).toContain('from "../types/index.js"');
+    expect(
+      result.artifacts.find((artifact) => artifact.path === "models/tests.ts")?.content,
+    ).toContain('from "../schemas/index.js"');
+    expect(
+      result.artifacts.find((artifact) => artifact.path === "models/tests.ts")?.content,
+    ).toContain('from "./metadata.js"');
+  });
+
   it("generates a models artifact from a built graph", () => {
     const User = defineModel({
       name: "User",
