@@ -634,9 +634,7 @@ describe("core", () => {
       expect(issues).toContainEqual(
         expect.objectContaining({
           path: "models",
-          message: expect.stringContaining(
-            "Circular relationship dependency",
-          ),
+          message: expect.stringContaining("Circular relationship dependency"),
         }),
       );
     });

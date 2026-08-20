@@ -6,7 +6,11 @@ import type {
   WebFramework,
 } from "@mavibase/config";
 
+import { isRouteMethod, type RouteDefinition } from "./routes.js";
+
 export const version = "0.1.0";
+
+export * from "./routes.js";
 
 export * from "./database.js";
 
@@ -55,14 +59,7 @@ export interface DefinitionsRegistry {
 
 /** Mavibase field types */
 export type FieldType =
-  | "string"
-  | "integer"
-  | "float"
-  | "decimal"
-  | "boolean"
-  | "uuid"
-  | "datetime"
-  | "json";
+  "string" | "integer" | "float" | "decimal" | "boolean" | "uuid" | "datetime" | "json";
 
 /** Modifiers that shape how a field behaves */
 export interface FieldModifiers {
@@ -152,10 +149,7 @@ const fieldPrototype = {
 };
 
 /** Build a field from a type and optional modifiers */
-function createField(
-  type: FieldType,
-  modifiers?: FieldModifiers,
-): ModifiableField {
+function createField(type: FieldType, modifiers?: FieldModifiers): ModifiableField {
   const definition = Object.create(fieldPrototype) as ModifiableField;
 
   definition.type = type;
@@ -168,10 +162,7 @@ function createField(
 }
 
 /** Return a new field with the given modifiers merged in */
-function withModifiers(
-  field: ModifiableField,
-  modifiers: FieldModifiers,
-): ModifiableField {
+function withModifiers(field: ModifiableField, modifiers: FieldModifiers): ModifiableField {
   return createField(field.type, {
     ...field.modifiers,
     ...modifiers,
@@ -207,11 +198,7 @@ export const field = {
 };
 
 /** Mavibase relationship types */
-export type RelationshipType =
-  | "one-to-one"
-  | "one-to-many"
-  | "many-to-one"
-  | "many-to-many";
+export type RelationshipType = "one-to-one" | "one-to-many" | "many-to-one" | "many-to-many";
 
 /** A relationship definition describes a link to another model */
 export interface RelationshipDefinition {
@@ -234,13 +221,8 @@ const relationshipPrototype = {
 };
 
 /** Build a relationship from a type and optional target model */
-function createRelationship(
-  type: RelationshipType,
-  model?: string,
-): ModifiableRelationship {
-  const definition = Object.create(
-    relationshipPrototype,
-  ) as ModifiableRelationship;
+function createRelationship(type: RelationshipType, model?: string): ModifiableRelationship {
+  const definition = Object.create(relationshipPrototype) as ModifiableRelationship;
 
   definition.type = type;
 
@@ -307,6 +289,7 @@ export interface ApplicationDefinition {
   stack: StackConfig;
   features?: AppFeatures;
   models?: ModelDefinition[];
+  routes?: RouteDefinition[];
   definitions?: DefinitionsRegistry;
 }
 
@@ -361,9 +344,7 @@ const VALID_RELATIONSHIP_TYPES: readonly string[] = [
 ];
 
 /** Validate a definition and return any issues found */
-export function validateDefinition(
-  definition: unknown,
-): ValidationIssue[] {
+export function validateDefinition(definition: unknown): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
 
   if (!definition || typeof definition !== "object") {
@@ -372,8 +353,10 @@ export function validateDefinition(
 
   const candidate = definition as Record<string, unknown>;
   const rawModels = candidate["models"];
+  const rawRoutes = candidate["routes"];
 
   const models = Array.isArray(rawModels) ? rawModels : [];
+  const routes = Array.isArray(rawRoutes) ? rawRoutes : [];
   const modelNames = new Set<string>();
 
   for (const model of models) {
@@ -383,6 +366,49 @@ export function validateDefinition(
       if (typeof modelName === "string") {
         modelNames.add(modelName);
       }
+    }
+  }
+
+  const routeNames = new Set<string>();
+  const routeSignatures = new Set<string>();
+  for (const route of routes) {
+    if (!route || typeof route !== "object") continue;
+    const routeObj = route as Record<string, unknown>;
+    const routeName = routeObj["name"];
+    const method = routeObj["method"];
+    const path = routeObj["path"];
+
+    if (typeof routeName !== "string" || !routeName.trim()) {
+      issues.push({ path: "routes.name", message: "Route name must not be empty." });
+    } else if (routeNames.has(routeName)) {
+      issues.push({
+        path: `routes.${routeName}`,
+        message: `Duplicate route name: "${routeName}".`,
+      });
+    } else {
+      routeNames.add(routeName);
+    }
+    if (!isRouteMethod(method)) {
+      issues.push({
+        path: `routes.${String(routeName)}.method`,
+        message: `Invalid route method: "${String(method)}".`,
+      });
+    }
+    if (typeof path !== "string" || !path.startsWith("/") || path.includes("//")) {
+      issues.push({
+        path: `routes.${String(routeName)}.path`,
+        message: `Invalid route path: "${String(path)}".`,
+      });
+    }
+    if (typeof method === "string" && typeof path === "string") {
+      const signature = `${method} ${path}`;
+      if (routeSignatures.has(signature)) {
+        issues.push({
+          path: `routes.${String(routeName)}`,
+          message: `Duplicate route method and path: "${signature}".`,
+        });
+      }
+      routeSignatures.add(signature);
     }
   }
 
@@ -424,15 +450,11 @@ export function validateDefinition(
 
     const fields = modelObj["fields"];
     const fieldEntries =
-      fields && typeof fields === "object"
-        ? Object.entries(fields as Record<string, unknown>)
-        : [];
+      fields && typeof fields === "object" ? Object.entries(fields as Record<string, unknown>) : [];
 
     for (const [name, fieldDef] of fieldEntries) {
       const fieldType =
-        fieldDef &&
-        typeof fieldDef === "object" &&
-        (fieldDef as Record<string, unknown>)["type"];
+        fieldDef && typeof fieldDef === "object" && (fieldDef as Record<string, unknown>)["type"];
 
       if (!VALID_FIELD_TYPES.includes(String(fieldType))) {
         issues.push({
@@ -450,14 +472,10 @@ export function validateDefinition(
 
     for (const [name, relDef] of relationshipEntries) {
       const relObj =
-        relDef && typeof relDef === "object"
-          ? (relDef as Record<string, unknown>)
-          : undefined;
+        relDef && typeof relDef === "object" ? (relDef as Record<string, unknown>) : undefined;
 
       const relType =
-        relObj &&
-        typeof relObj === "object" &&
-        (relObj as Record<string, unknown>)["type"];
+        relObj && typeof relObj === "object" && (relObj as Record<string, unknown>)["type"];
 
       if (!VALID_RELATIONSHIP_TYPES.includes(String(relType))) {
         issues.push({
@@ -517,13 +535,9 @@ export function validateDefinition(
       const relationships = modelObj["relationships"];
 
       if (relationships && typeof relationships === "object") {
-        for (const relDef of Object.values(
-          relationships as Record<string, unknown>,
-        )) {
+        for (const relDef of Object.values(relationships as Record<string, unknown>)) {
           const relObj =
-            relDef && typeof relDef === "object"
-              ? (relDef as Record<string, unknown>)
-              : undefined;
+            relDef && typeof relDef === "object" ? (relDef as Record<string, unknown>) : undefined;
 
           const targetModel = relObj && relObj["model"];
 
@@ -554,32 +568,27 @@ export function validateDefinition(
 }
 
 /** Define a Mavibase application */
-export function defineApp(
-  definition: ApplicationDefinition,
-): ApplicationDefinition {
+export function defineApp(definition: ApplicationDefinition): ApplicationDefinition {
   if (!definition.name.trim()) {
     throw new Error("Application name must not be empty.");
   }
 
   if (!/^\d+\.\d+\.\d+/.test(definition.version)) {
-    throw new Error(
-      `Invalid application version: "${definition.version}". Expected semver.`,
-    );
+    throw new Error(`Invalid application version: "${definition.version}". Expected semver.`);
   }
 
   const issues = validateDefinition(definition);
 
   if (issues.length > 0) {
     throw new Error(
-      `Invalid application definition: ${issues
-        .map((issue) => issue.message)
-        .join(" ")}`,
+      `Invalid application definition: ${issues.map((issue) => issue.message).join(" ")}`,
     );
   }
 
   return {
     ...definition,
     models: definition.models ?? [],
+    ...(definition.routes === undefined ? {} : { routes: definition.routes }),
     definitions: definition.definitions ?? {},
   };
 }

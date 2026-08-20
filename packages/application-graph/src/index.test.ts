@@ -8,7 +8,7 @@ import {
   validateGraph,
   version,
 } from "./index.js";
-import { defineApp, defineModel, field, relationship } from "@mavibase/core";
+import { defineApp, defineModel, defineRoute, field, relationship } from "@mavibase/core";
 
 describe("application-graph", () => {
   it("exports a version", () => {
@@ -40,9 +40,7 @@ describe("application-graph", () => {
     it("supports every graph edge type", () => {
       expect(createEdge("a", "b", "contains").type).toBe("contains");
       expect(createEdge("a", "b", "has-field").type).toBe("has-field");
-      expect(createEdge("a", "b", "has-relationship").type).toBe(
-        "has-relationship",
-      );
+      expect(createEdge("a", "b", "has-relationship").type).toBe("has-relationship");
       expect(createEdge("a", "b", "targets").type).toBe("targets");
       expect(createEdge("a", "b", "uses").type).toBe("uses");
       expect(createEdge("a", "b", "validates").type).toBe("validates");
@@ -62,9 +60,7 @@ describe("application-graph", () => {
     });
 
     it("creates a node with data", () => {
-      expect(
-        createNode("route", "route:users.list", { method: "GET" }),
-      ).toEqual({
+      expect(createNode("route", "route:users.list", { method: "GET" })).toEqual({
         id: "route:users.list",
         type: "route",
         data: { method: "GET" },
@@ -75,20 +71,14 @@ describe("application-graph", () => {
       expect(createNode("application", "app:test").type).toBe("application");
       expect(createNode("model", "model:user").type).toBe("model");
       expect(createNode("field", "field:user.name").type).toBe("field");
-      expect(createNode("relationship", "relationship:user.posts").type).toBe(
-        "relationship",
-      );
+      expect(createNode("relationship", "relationship:user.posts").type).toBe("relationship");
       expect(createNode("route", "route:users.list").type).toBe("route");
-      expect(createNode("operation", "operation:create-user").type).toBe(
-        "operation",
-      );
+      expect(createNode("operation", "operation:create-user").type).toBe("operation");
       expect(createNode("event", "event:user-created").type).toBe("event");
       expect(createNode("policy", "policy:owns-post").type).toBe("policy");
       expect(createNode("workflow", "workflow:checkout").type).toBe("workflow");
       expect(createNode("service", "service:auth").type).toBe("service");
-      expect(createNode("integration", "integration:stripe").type).toBe(
-        "integration",
-      );
+      expect(createNode("integration", "integration:stripe").type).toBe("integration");
     });
   });
 
@@ -280,6 +270,42 @@ describe("application-graph", () => {
     });
   });
 
+  it("creates route nodes from explicit route definitions", () => {
+    const app = defineApp({
+      name: "my-app",
+      version: "1.0.0",
+      environment: "development",
+      stack: { language: "typescript", runtime: "node" },
+      routes: [
+        defineRoute({
+          name: "users.list",
+          method: "GET",
+          path: "/users",
+          description: "List users",
+        }),
+      ],
+    });
+
+    const graph = buildGraph(app);
+
+    expect(graph.nodes).toContainEqual({
+      id: "route:get:users.list",
+      type: "route",
+      data: {
+        id: "get:users.list",
+        name: "users.list",
+        method: "GET",
+        path: "/users",
+        description: "List users",
+      },
+    });
+    expect(graph.edges).toContainEqual({
+      from: "app:my-app",
+      to: "route:get:users.list",
+      type: "contains",
+    });
+  });
+
   describe("serializeGraph", () => {
     it("serializes a graph into a stable JSON string", () => {
       const User = defineModel({ name: "User" });
@@ -369,16 +395,12 @@ describe("application-graph", () => {
     });
 
     it("throws for invalid JSON", () => {
-      expect(() => deserializeGraph("not-json")).toThrow(
-        "Failed to parse graph JSON.",
-      );
+      expect(() => deserializeGraph("not-json")).toThrow("Failed to parse graph JSON.");
     });
 
     it("throws for an invalid format", () => {
       expect(() =>
-        deserializeGraph(
-          JSON.stringify({ format: "other", schemaVersion: 1, graph: {} }),
-        ),
+        deserializeGraph(JSON.stringify({ format: "other", schemaVersion: 1, graph: {} })),
       ).toThrow('Invalid graph format. Expected "mavibase-graph".');
     });
 
@@ -396,9 +418,7 @@ describe("application-graph", () => {
 
     it("throws for a missing graph payload", () => {
       expect(() =>
-        deserializeGraph(
-          JSON.stringify({ format: "mavibase-graph", schemaVersion: 1 }),
-        ),
+        deserializeGraph(JSON.stringify({ format: "mavibase-graph", schemaVersion: 1 })),
       ).toThrow("Invalid graph payload.");
     });
   });
@@ -541,10 +561,7 @@ describe("application-graph", () => {
         .filter((edge) => edge.from === "model:user")
         .map((edge) => edge.to);
 
-      expect(outgoing).toEqual([
-        "field:user.id",
-        "field:user.email",
-      ]);
+      expect(outgoing).toEqual(["field:user.id", "field:user.email"]);
 
       const incoming = graph.edges
         .filter((edge) => edge.to === "model:user")

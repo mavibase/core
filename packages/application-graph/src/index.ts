@@ -210,6 +210,20 @@ export function buildGraph(definition: ApplicationDefinition): ApplicationGraph 
 
   const models = definition.models ?? [];
 
+  for (const route of definition.routes ?? []) {
+    const routeId = `route:${route.id}`;
+    nodes.push(
+      createNode("route", routeId, {
+        id: route.id,
+        name: route.name,
+        method: route.method,
+        path: route.path,
+        ...(route.description === undefined ? {} : { description: route.description }),
+      }),
+    );
+    edges.push(createEdge(appId, routeId, "contains"));
+  }
+
   for (const model of models) {
     const modelId = `model:${model.id}`;
 
@@ -253,9 +267,7 @@ export function buildGraph(definition: ApplicationDefinition): ApplicationGraph 
       edges.push(createEdge(modelId, relId, "has-relationship"));
 
       if (relDef.model) {
-        const targetModel = models.find(
-          (candidate) => candidate.name === relDef.model,
-        );
+        const targetModel = models.find((candidate) => candidate.name === relDef.model);
 
         if (targetModel) {
           edges.push(createEdge(relId, `model:${targetModel.id}`, "targets"));
