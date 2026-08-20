@@ -2,6 +2,11 @@ import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
 import type { GeneratedFile } from "./index.js";
+import {
+  artifactIdentity,
+  hashGeneratedContent,
+  type GenerationManifest,
+} from "./generation-manifest.js";
 
 export type FileOperation = "create" | "update" | "delete" | "skip";
 
@@ -11,6 +16,8 @@ export interface FilesystemOptions {
   protectedPaths?: readonly string[];
   generatedPaths?: readonly string[];
   generatedMarker?: string;
+  manifest?: GenerationManifest;
+  generator?: string;
 
   dryRun?: boolean;
 }
@@ -104,6 +111,8 @@ export class Filesystem {
   private readonly protectedPaths: Set<string>;
   private readonly generatedPaths: Set<string>;
   private readonly generatedMarker: string | undefined;
+  private readonly manifest: GenerationManifest | undefined;
+  private readonly generator: string;
 
   constructor(options: FilesystemOptions) {
     this.rootDir = resolve(options.rootDir);
@@ -111,6 +120,8 @@ export class Filesystem {
     this.targetRoot = target === "." ? "" : normalizeRelativePath(target, "configure target root");
     this.dryRun = options.dryRun ?? false;
     this.generatedMarker = options.generatedMarker;
+    this.manifest = options.manifest?.targetRoot === this.targetRoot ? options.manifest : undefined;
+    this.generator = options.generator ?? "mavibase-generator";
     this.protectedPaths = new Set(
       (options.protectedPaths ?? []).map((path) =>
         normalizeRelativePath(path, "configure protected path"),
@@ -186,6 +197,10 @@ export class Filesystem {
     }
 
     const paths = new Set([...unique.keys(), ...this.generatedPaths]);
+    for (const file of Object.values(this.manifest?.files ?? {})) {
+      const resolved = this.projectPath(file.path, "plan");
+      paths.add(resolved.path);
+    }
     const operations: FileOperationPlan[] = [];
     for (const path of [...paths].sort((left, right) => left.localeCompare(right))) {
       const artifact = unique.get(path);
@@ -193,9 +208,27 @@ export class Filesystem {
       const resolved = this.projectPath(artifactPath, "plan");
       const exists = await this.exists(artifactPath);
       const protectedPath = this.protectedPaths.has(path);
+      const manifestFile = this.manifest?.files[artifactIdentity(artifactPath, this.generator)];
 
       if (!artifact) {
-        if (exists && this.generatedPaths.has(path) && !protectedPath) {
+        if (exists && manifestFile && !protectedPath) {
+          const current = await this.read(artifactPath);
+          if (hashGeneratedContent(current) === manifestFile.contentHash) {
+            operations.push({
+              operation: "delete",
+              path,
+              absolutePath: resolved.absolutePath,
+              reason: "previously generated file is no longer produced",
+            });
+          } else {
+            operations.push({
+              operation: "skip",
+              path,
+              absolutePath: resolved.absolutePath,
+              reason: "previously generated file was modified by a developer",
+            });
+          }
+        } else if (exists && this.generatedPaths.has(path) && !protectedPath) {
           operations.push({
             operation: "delete",
             path,
@@ -228,6 +261,33 @@ export class Filesystem {
           absolutePath: resolved.absolutePath,
           reason: "path is protected",
         });
+      } else if (manifestFile) {
+        const current = await this.read(artifactPath);
+        if (hashGeneratedContent(current) !== manifestFile.contentHash) {
+          operations.push({
+            operation: "skip",
+            path,
+            absolutePath: resolved.absolutePath,
+            reason: "existing file was modified by a developer",
+          });
+          continue;
+        }
+        if ((await this.compare(artifactPath, artifact.content)).equal) {
+          operations.push({
+            operation: "skip",
+            path,
+            absolutePath: resolved.absolutePath,
+            reason: "content is unchanged",
+          });
+        } else {
+          operations.push({
+            operation: "update",
+            path,
+            absolutePath: resolved.absolutePath,
+            reason: "existing file is confirmed as generated and content differs",
+            content: artifact.content,
+          });
+        }
       } else if (!(await this.isGenerated(path, artifactPath))) {
         operations.push({
           operation: "skip",

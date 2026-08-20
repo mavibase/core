@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { Filesystem, FilesystemError } from "./filesystem.js";
+import { createGenerationManifest } from "./generation-manifest.js";
 
 const directories: string[] = [];
 
@@ -110,5 +111,30 @@ describe("filesystem abstraction", () => {
     const plan = await filesystem.write([]);
     expect(plan.operations[0]?.operation).toBe("delete");
     expect(await filesystem.exists("removed.ts")).toBe(false);
+  });
+
+  it("uses manifest hashes to protect updates and deletions", async () => {
+    const rootDir = await temporaryDirectory();
+    await mkdir(join(rootDir, "generated"), { recursive: true });
+    await writeFile(join(rootDir, "generated", "models.ts"), "old\n");
+    const manifest = createGenerationManifest(
+      "generated",
+      [{ path: "models.ts", content: "old\n" }, { path: "removed.ts", content: "removed\n" }],
+      "0.1.0",
+    );
+    const filesystem = new Filesystem({ rootDir, targetRoot: "generated", manifest });
+
+    const update = await filesystem.plan([{ path: "models.ts", content: "new\n" }]);
+    expect(update.operations.find((operation) => operation.path.endsWith("models.ts"))?.operation).toBe(
+      "update",
+    );
+    expect(update.operations.find((operation) => operation.path.endsWith("removed.ts"))?.operation).toBe(
+      "skip",
+    );
+
+    await writeFile(join(rootDir, "generated", "models.ts"), "developer\n");
+    const conflict = await filesystem.plan([{ path: "models.ts", content: "newer\n" }]);
+    expect(conflict.operations[0]?.operation).toBe("skip");
+    expect(conflict.operations[0]?.reason).toContain("developer");
   });
 });
