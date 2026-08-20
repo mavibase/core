@@ -34,7 +34,10 @@ export function defineRoute(input: DefineRouteInput): RouteDefinition {
   if (!input.path.startsWith("/") || input.path.includes("//")) {
     throw new Error(`Invalid route path: "${input.path}".`);
   }
-  const parameters = input.parameters ?? [];
+  const parameters = (input.parameters ?? []).map((parameter) => ({
+    ...parameter,
+    required: parameter.required ?? parameter.location === "path",
+  }));
   const parameterIssues = validateRouteParameters(input.path, parameters);
   if (parameterIssues.length > 0) {
     throw new Error(parameterIssues[0]?.message ?? "Invalid route parameter.");
