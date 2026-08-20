@@ -4,8 +4,10 @@ import {
   createEdge,
   createNode,
   deserializeGraph,
+  GraphValidationError,
   serializeGraph,
   validateGraph,
+  validateGraphResult,
   version,
 } from "./index.js";
 import {
@@ -430,6 +432,36 @@ describe("application-graph", () => {
         deserializeGraph(JSON.stringify({ format: "mavibase-graph", schemaVersion: 1 })),
       ).toThrow("Invalid graph payload.");
     });
+
+    it("throws with diagnostics for an invalid graph structure", () => {
+      expect(() =>
+        deserializeGraph(
+          JSON.stringify({
+            format: "mavibase-graph",
+            schemaVersion: 1,
+            graph: { name: "my-app", version: "1.0.0", nodes: {}, edges: [] },
+          }),
+        ),
+      ).toThrow(GraphValidationError);
+
+      try {
+        deserializeGraph(
+          JSON.stringify({
+            format: "mavibase-graph",
+            schemaVersion: 1,
+            graph: { name: "my-app", version: "1.0.0", nodes: {}, edges: [] },
+          }),
+        );
+      } catch (error) {
+        expect(error).toBeInstanceOf(GraphValidationError);
+        expect((error as GraphValidationError).diagnostics).toContainEqual(
+          expect.objectContaining({
+            code: "graph.invalid-shape",
+            path: "nodes",
+          }),
+        );
+      }
+    });
   });
 
   describe("validateGraph", () => {
@@ -539,6 +571,50 @@ describe("application-graph", () => {
       expect(validateGraph(graph)).toContainEqual({
         path: "edges[app:my-app -> app:my-app]",
         message: "Application nodes may only have contains edges.",
+      });
+    });
+
+    it("reports invalid node and edge shapes", () => {
+      const result = validateGraphResult({
+        name: "my-app",
+        version: "1.0.0",
+        nodes: [
+          { id: "model:user", type: "unknown" },
+          { id: "model:user", type: "model", data: [] },
+        ],
+        edges: [
+          { from: "model:user", to: "model:user", type: "unknown", data: [] },
+        ],
+      });
+
+      expect(result.valid).toBe(false);
+      expect(result.diagnostics).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ code: "graph.invalid-node", path: "nodes[0].type" }),
+          expect.objectContaining({ code: "graph.invalid-node", path: "nodes[1].data" }),
+          expect.objectContaining({ code: "graph.invalid-edge", path: "edges[0].type" }),
+          expect.objectContaining({ code: "graph.invalid-edge", path: "edges[0].data" }),
+        ]),
+      );
+    });
+
+    it("reports duplicate edges", () => {
+      const issues = validateGraph({
+        name: "my-app",
+        version: "1.0.0",
+        nodes: [
+          { id: "model:user", type: "model" as const },
+          { id: "model:post", type: "model" as const },
+        ],
+        edges: [
+          { from: "model:user", to: "model:post", type: "connects" as const },
+          { from: "model:user", to: "model:post", type: "connects" as const },
+        ],
+      });
+
+      expect(issues).toContainEqual({
+        path: "edges[1]",
+        message: 'Duplicate edge: "model:user -> model:post (connects)".',
       });
     });
   });

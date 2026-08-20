@@ -1,4 +1,8 @@
-import type { ApplicationDefinition } from "@mavibase/core";
+import type {
+  ApplicationDefinition,
+  Diagnostic,
+  ValidationResult,
+} from "@mavibase/core";
 
 export const version = "0.1.0";
 
@@ -56,6 +60,16 @@ export type SerializedGraph = {
 export interface GraphIssue {
   path: string;
   message: string;
+}
+
+export class GraphValidationError extends Error {
+  readonly diagnostics: readonly Diagnostic[];
+
+  constructor(message: string, diagnostics: readonly Diagnostic[]) {
+    super(message);
+    this.name = "GraphValidationError";
+    this.diagnostics = diagnostics;
+  }
 }
 
 const GRAPH_SCHEMA_VERSION = 1;
@@ -125,66 +139,218 @@ export function deserializeGraph(input: string): ApplicationGraph {
     throw new Error(`Unsupported graph schema version: "${payload["schemaVersion"]}".`);
   }
 
-  const graph = payload["graph"] as ApplicationGraph | undefined;
+  const graph = payload["graph"] as unknown;
 
   if (!graph || typeof graph !== "object") {
     throw new Error("Invalid graph payload.");
   }
 
-  return graph;
+  const result = validateGraphResult(graph);
+  if (!result.valid || !result.value) {
+    const message = result.diagnostics.map((diagnostic) => diagnostic.message).join(" ");
+    throw new GraphValidationError(`Invalid graph: ${message}`, result.diagnostics);
+  }
+
+  return result.value;
 }
 
-export function validateGraph(graph: ApplicationGraph): GraphIssue[] {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const graphNodeTypes: readonly GraphNodeType[] = [
+  "application",
+  "model",
+  "field",
+  "relationship",
+  "route",
+  "operation",
+  "event",
+  "policy",
+  "workflow",
+  "service",
+  "integration",
+];
+
+const graphEdgeTypes: readonly GraphEdgeType[] = [
+  "contains",
+  "has-field",
+  "has-relationship",
+  "targets",
+  "uses",
+  "validates",
+  "protects",
+  "triggers",
+  "implements",
+  "connects",
+];
+
+function graphIssueCode(issue: GraphIssue): string {
+  if (issue.message.startsWith("Duplicate node id:")) return "graph.duplicate-node";
+  if (issue.message.startsWith("Duplicate edge:")) return "graph.duplicate-edge";
+  if (issue.message.startsWith("Edge references unknown source")) {
+    return "graph.unknown-edge-source";
+  }
+  if (issue.message.startsWith("Edge references unknown target")) {
+    return "graph.unknown-edge-target";
+  }
+  if (issue.message.startsWith("Invalid node")) return "graph.invalid-node";
+  if (issue.message.startsWith("Invalid edge")) return "graph.invalid-edge";
+  if (issue.message.startsWith("Application nodes")) return "graph.invalid-edge-relation";
+  return "graph.invalid-shape";
+}
+
+function graphIssueToDiagnostic(issue: GraphIssue): Diagnostic {
+  return {
+    severity: "error",
+    code: graphIssueCode(issue),
+    message: issue.message,
+    path: issue.path,
+  };
+}
+
+export function validateGraph(graph: unknown): GraphIssue[] {
   const issues: GraphIssue[] = [];
+
+  if (!isRecord(graph)) {
+    return [{ path: "graph", message: "Graph must be an object." }];
+  }
+
+  if (typeof graph["name"] !== "string" || !graph["name"].trim()) {
+    issues.push({ path: "name", message: "Graph name must not be empty." });
+  }
+  if (typeof graph["version"] !== "string" || !graph["version"].trim()) {
+    issues.push({ path: "version", message: "Graph version must not be empty." });
+  }
+
+  const rawNodes = graph["nodes"];
+  const rawEdges = graph["edges"];
+  if (!Array.isArray(rawNodes)) {
+    issues.push({ path: "nodes", message: "Graph nodes must be an array." });
+  }
+  if (!Array.isArray(rawEdges)) {
+    issues.push({ path: "edges", message: "Graph edges must be an array." });
+  }
+  if (!Array.isArray(rawNodes) || !Array.isArray(rawEdges)) return issues;
 
   const nodeIds = new Set<string>();
   const nodeIdToType = new Map<string, GraphNodeType>();
 
-  for (const node of graph.nodes) {
-    if (nodeIds.has(node.id)) {
+  for (const [index, node] of rawNodes.entries()) {
+    if (!isRecord(node)) {
       issues.push({
-        path: `nodes[${node.id}]`,
-        message: `Duplicate node id: "${node.id}". Node ids must be unique.`,
+        path: `nodes[${index}]`,
+        message: "Invalid node: node must be an object.",
+      });
+      continue;
+    }
+    if (typeof node["id"] !== "string" || !node["id"].trim()) {
+      issues.push({
+        path: `nodes[${index}].id`,
+        message: "Invalid node id: node id must be a non-empty string.",
+      });
+      continue;
+    }
+    if (!graphNodeTypes.includes(node["type"] as GraphNodeType)) {
+      issues.push({
+        path: `nodes[${index}].type`,
+        message: `Invalid node type: "${String(node["type"])}".`,
+      });
+    }
+    if (node["data"] !== undefined && !isRecord(node["data"])) {
+      issues.push({
+        path: `nodes[${index}].data`,
+        message: "Invalid node data: data must be an object.",
       });
     }
 
-    nodeIds.add(node.id);
-    nodeIdToType.set(node.id, node.type);
+    const nodeId = node["id"] as string;
+    if (nodeIds.has(nodeId)) {
+      issues.push({
+        path: `nodes[${nodeId}]`,
+        message: `Duplicate node id: "${nodeId}". Node ids must be unique.`,
+      });
+    }
+
+    nodeIds.add(nodeId);
+    nodeIdToType.set(nodeId, node["type"] as GraphNodeType);
   }
 
-  for (const edge of graph.edges) {
-    if (!edge.from || !edge.to) {
+  const edgeKeys = new Set<string>();
+  for (const [index, edge] of rawEdges.entries()) {
+    if (!isRecord(edge)) {
+      issues.push({
+        path: `edges[${index}]`,
+        message: "Invalid edge: edge must be an object.",
+      });
+      continue;
+    }
+
+    const from = edge["from"];
+    const to = edge["to"];
+    const type = edge["type"];
+    const fromId = typeof from === "string" ? from : String(from);
+    const toId = typeof to === "string" ? to : String(to);
+    if (typeof from !== "string" || typeof to !== "string" || !from || !to) {
       issues.push({
         path: "edges",
         message: "Edge must define both from and to node ids.",
       });
     }
-
-    if (!nodeIds.has(edge.from)) {
+    if (!graphEdgeTypes.includes(type as GraphEdgeType)) {
       issues.push({
-        path: `edges[${edge.from} -> ${edge.to}]`,
-        message: `Edge references unknown source node: "${edge.from}".`,
+        path: `edges[${index}].type`,
+        message: `Invalid edge type: "${String(type)}".`,
+      });
+    }
+    if (edge["data"] !== undefined && !isRecord(edge["data"])) {
+      issues.push({
+        path: `edges[${index}].data`,
+        message: "Invalid edge data: data must be an object.",
       });
     }
 
-    if (!nodeIds.has(edge.to)) {
+    const edgeKey = `${fromId}\u0000${toId}\u0000${String(type)}`;
+    if (edgeKeys.has(edgeKey)) {
       issues.push({
-        path: `edges[${edge.from} -> ${edge.to}]`,
-        message: `Edge references unknown target node: "${edge.to}".`,
+        path: `edges[${index}]`,
+        message: `Duplicate edge: "${fromId} -> ${toId} (${String(type)})".`,
+      });
+    }
+    edgeKeys.add(edgeKey);
+
+    if (!nodeIds.has(fromId)) {
+      issues.push({
+        path: `edges[${fromId} -> ${toId}]`,
+        message: `Edge references unknown source node: "${fromId}".`,
       });
     }
 
-    const fromType = nodeIdToType.get(edge.from);
-
-    if (fromType === "application" && edge.type !== "contains") {
+    if (!nodeIds.has(toId)) {
       issues.push({
-        path: `edges[${edge.from} -> ${edge.to}]`,
+        path: `edges[${fromId} -> ${toId}]`,
+        message: `Edge references unknown target node: "${toId}".`,
+      });
+    }
+
+    const fromType = nodeIdToType.get(fromId);
+
+    if (fromType === "application" && type !== "contains") {
+      issues.push({
+        path: `edges[${fromId} -> ${toId}]`,
         message: "Application nodes may only have contains edges.",
       });
     }
   }
 
   return issues;
+}
+
+export function validateGraphResult(graph: unknown): ValidationResult<ApplicationGraph> {
+  const issues = validateGraph(graph);
+  const diagnostics = issues.map(graphIssueToDiagnostic);
+  if (diagnostics.length > 0) return { valid: false, diagnostics };
+  return { valid: true, value: graph as ApplicationGraph, diagnostics };
 }
 
 function slugify(value: string): string {

@@ -1,6 +1,6 @@
-import type { ApplicationDefinition } from "@mavibase/core";
+import { normalizeDefinition, type ApplicationDefinition, type Diagnostic } from "@mavibase/core";
 import type { ApplicationGraph } from "@mavibase/application-graph";
-import { buildGraph } from "@mavibase/application-graph";
+import { buildGraph, validateGraphResult } from "@mavibase/application-graph";
 
 import { generateModelMetadata, generateModels } from "./model-generator.js";
 import { generateRelationships } from "./relationship-generator.js";
@@ -33,6 +33,16 @@ export interface GeneratedFile {
 export interface GenerateResult {
   files: string[];
   artifacts: GeneratedFile[];
+}
+
+export class GenerationValidationError extends Error {
+  readonly diagnostics: readonly Diagnostic[];
+
+  constructor(message: string, diagnostics: readonly Diagnostic[]) {
+    super(message);
+    this.name = "GenerationValidationError";
+    this.diagnostics = diagnostics;
+  }
 }
 
 function slugify(value: string): string {
@@ -86,6 +96,14 @@ function structuredArtifact(artifact: GeneratedFile): GeneratedFile {
 }
 
 export function generate(graph: ApplicationGraph, options?: GenerateOptions): GenerateResult {
+  const graphResult = validateGraphResult(graph);
+  if (!graphResult.valid) {
+    throw new GenerationValidationError(
+      `Invalid application graph: ${graphResult.diagnostics.map((diagnostic) => diagnostic.message).join(" ")}`,
+      graphResult.diagnostics,
+    );
+  }
+
   assertModelGenerationValid(
     graph,
     options?.outDir === undefined ? undefined : { outDir: options.outDir },
@@ -190,7 +208,22 @@ export function generateFromDefinition(
   definition: ApplicationDefinition,
   options?: GenerateOptions,
 ): GenerateResult {
-  const graph = buildGraph(definition);
+  const definitionResult = normalizeDefinition(definition);
+  if (!definitionResult.valid || !definitionResult.value) {
+    throw new GenerationValidationError(
+      `Invalid application definition: ${definitionResult.diagnostics.map((diagnostic) => diagnostic.message).join(" ")}`,
+      definitionResult.diagnostics,
+    );
+  }
+
+  const graph = buildGraph(definitionResult.value);
+  const graphResult = validateGraphResult(graph);
+  if (!graphResult.valid) {
+    throw new GenerationValidationError(
+      `Invalid application graph: ${graphResult.diagnostics.map((diagnostic) => diagnostic.message).join(" ")}`,
+      graphResult.diagnostics,
+    );
+  }
 
   return generate(graph, options);
 }

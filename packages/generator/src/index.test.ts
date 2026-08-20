@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { generate, generateFromDefinition, version } from "./index.js";
+import {
+  generate,
+  generateFromDefinition,
+  GenerationValidationError,
+  version,
+} from "./index.js";
 import { defineApp, defineModel, field, relationship } from "@mavibase/core";
 import { buildGraph } from "@mavibase/application-graph";
 
@@ -181,5 +186,28 @@ describe("generator", () => {
     expect(artifact.content).toContain("export interface User {");
     expect(artifact.content).toContain("export interface Post {");
     expect(result.artifacts[2]?.content).toContain("export const UserRelationships = {");
+  });
+
+  it("rejects invalid definitions before generation", () => {
+    expect(() =>
+      generateFromDefinition({
+        name: "my-app",
+        version: "1.0.0",
+        environment: "development",
+        stack: { language: "typescript", runtime: "node" },
+        models: {} as never,
+      }),
+    ).toThrow(GenerationValidationError);
+  });
+
+  it("rejects invalid graphs before generation", () => {
+    expect(() =>
+      generate({
+        name: "my-app",
+        version: "1.0.0",
+        nodes: [{ id: "model:user", type: "invalid" as never }],
+        edges: [],
+      }),
+    ).toThrow(GenerationValidationError);
   });
 });
