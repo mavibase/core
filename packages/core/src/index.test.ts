@@ -240,15 +240,26 @@ describe("core", () => {
     });
 
     it("preserves provided indexes", () => {
-      const indexes = [{ fields: ["email"] }];
+      const indexes = [{ columns: ["email"] }];
       const model = defineModel({ name: "User", indexes });
-      expect(model.indexes).toBe(indexes);
+      expect(model.indexes).toEqual([{ name: "user_email_idx", columns: ["email"] }]);
     });
 
     it("preserves provided constraints", () => {
-      const constraints = [{ type: "unique" }];
+      const constraints = [{ type: "unique" as const, columns: ["email"] }];
       const model = defineModel({ name: "User", constraints });
-      expect(model.constraints).toBe(constraints);
+      expect(model.constraints).toEqual([
+        { name: "user_email_unique", type: "unique", columns: ["email"] },
+      ]);
+    });
+
+    it("rejects invalid database definitions at the model boundary", () => {
+      expect(() => defineModel({ name: "User", indexes: [{ fields: [] }] })).toThrow(
+        "Index columns must contain at least one value.",
+      );
+      expect(() => defineModel({ name: "User", constraints: [{ type: "unique" }] })).toThrow(
+        "Constraint columns must contain at least one value.",
+      );
     });
 
     it("preserves provided metadata", () => {

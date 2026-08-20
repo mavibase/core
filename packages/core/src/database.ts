@@ -199,6 +199,11 @@ export function defineDatabaseConstraint(
   if (!isNonEmptyString(tableName)) {
     issues.push({ path: "table", message: "Constraint table name must not be empty." });
   }
+  const inputType = isRecord(input) ? input["type"] : undefined;
+  if (!isRecord(input) || !["primary-key", "unique", "foreign-key", "check"].includes(String(inputType))) {
+    issues.push({ path: "type", message: "Constraint type is not supported." });
+  }
+  if (issues.length > 0) throw new DatabaseSchemaDefinitionError(issues);
   if (input.type === "check") {
     if (!isNonEmptyString(input.expression)) {
       issues.push({
@@ -250,11 +255,21 @@ export function defineDatabaseConstraint(
   const name =
     input.name ??
     createDatabaseConstraintName(tableName, input.type, "columns" in input ? input.columns : []);
-  return {
-    ...input,
-    name,
-    ...("columns" in input ? { columns: [...input.columns] } : {}),
-  } as DatabaseConstraintDefinition;
+  if (input.type === "check") {
+    return { name, type: "check", expression: input.expression };
+  }
+  if (input.type === "foreign-key") {
+    return {
+      name,
+      type: "foreign-key",
+      columns: [...input.columns],
+      referencedTable: input.referencedTable,
+      referencedColumns: [...input.referencedColumns],
+      ...(input.onDelete === undefined ? {} : { onDelete: input.onDelete }),
+      ...(input.onUpdate === undefined ? {} : { onUpdate: input.onUpdate }),
+    };
+  }
+  return { name, type: input.type, columns: [...input.columns] };
 }
 
 export function validateDatabaseSeedDefinition(

@@ -9,6 +9,13 @@ import { createDefaultStackRegistries } from "@mavibase/config";
 
 import { isRouteMethod, type RouteDefinition } from "./routes.js";
 import { validateRouteParameters, type DefineParameterInput } from "./parameters.js";
+import {
+  defineDatabaseConstraint,
+  defineDatabaseIndex,
+  type DatabaseConstraintDefinition,
+  type DatabaseConstraintInput,
+  type DatabaseIndexDefinition,
+} from "./database.js";
 
 import type { Diagnostic, ValidationResult } from "./diagnostics.js";
 
@@ -336,10 +343,10 @@ export interface ModelDefinition {
   relationships?: Record<string, RelationshipDefinition>;
 
   /** Database indexes */
-  indexes?: unknown[];
+  indexes?: readonly DatabaseIndexDefinition[];
 
   /** Database constraints */
-  constraints?: unknown[];
+  constraints?: readonly DatabaseConstraintDefinition[];
 
   /** Additional model metadata */
   metadata?: Record<string, unknown>;
@@ -350,8 +357,8 @@ export interface DefineModelInput {
   id?: string;
   fields?: Record<string, FieldDefinition>;
   relationships?: Record<string, RelationshipDefinition>;
-  indexes?: unknown[];
-  constraints?: unknown[];
+  indexes?: readonly unknown[];
+  constraints?: readonly unknown[];
   metadata?: Record<string, unknown>;
 }
 
@@ -382,13 +389,26 @@ export function defineModel(input: DefineModelInput): ModelDefinition {
 
   const id = input.id ?? slugify(input.name);
 
+  const indexes = (input.indexes ?? []).map((value) => {
+    const candidate = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+    const columns = candidate["columns"] ?? candidate["fields"];
+    return defineDatabaseIndex(input.name, {
+      ...(typeof candidate["name"] === "string" ? { name: candidate["name"] } : {}),
+      columns: columns as readonly string[],
+      ...(typeof candidate["unique"] === "boolean" ? { unique: candidate["unique"] } : {}),
+    });
+  });
+  const constraints = (input.constraints ?? []).map((value) =>
+    defineDatabaseConstraint(input.name, value as DatabaseConstraintInput),
+  );
+
   return {
     id,
     name: input.name,
     fields: input.fields ?? {},
     relationships: input.relationships ?? {},
-    indexes: input.indexes ?? [],
-    constraints: input.constraints ?? [],
+    indexes,
+    constraints,
     metadata: input.metadata ?? {},
   };
 }
