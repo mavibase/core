@@ -5,6 +5,8 @@ import { buildGraph } from "@mavibase/application-graph";
 import { generateModelMetadata, generateModels } from "./model-generator.js";
 import { generateRelationships } from "./relationship-generator.js";
 import { generateQueryHelpers } from "./query-helper-generator.js";
+import { generateModelTests } from "./model-test-generator.js";
+import { assertModelGenerationValid } from "./model-generation-validation.js";
 import { generateTypes } from "./type-generator.js";
 import { generateZodSchemas } from "./zod-generator.js";
 
@@ -32,6 +34,10 @@ function slugify(value: string): string {
 }
 
 export function generate(graph: ApplicationGraph, options?: GenerateOptions): GenerateResult {
+  assertModelGenerationValid(
+    graph,
+    options?.outDir === undefined ? undefined : { outDir: options.outDir },
+  );
   const artifacts: GeneratedFile[] = [];
 
   const modelFile = generateModels(graph);
@@ -70,6 +76,12 @@ export function generate(graph: ApplicationGraph, options?: GenerateOptions): Ge
     artifacts.push(typeFile);
   }
 
+  const modelTestsFile = generateModelTests(graph);
+
+  if (modelTestsFile) {
+    artifacts.push(modelTestsFile);
+  }
+
   const outDir = options?.outDir ?? "generated";
 
   return {
@@ -94,6 +106,10 @@ export * from "./database-validation.js";
 export * from "./model-generator.js";
 export * from "./relationship-generator.js";
 export * from "./query-helper-generator.js";
+export * from "./model-validation.js";
+export * from "./model-generation-validation.js";
+export * from "./model-test-generator.js";
+export * from "./model-generation-testing.js";
 export * from "./migration-generator.js";
 export * from "./postgresql-generator.js";
 export * from "./sql-generator.js";

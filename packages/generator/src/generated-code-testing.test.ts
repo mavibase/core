@@ -34,18 +34,21 @@ describe("generated-code testing", () => {
         "query-helpers.ts",
         "schemas.ts",
         "types.ts",
+        "model-tests.ts",
       ],
     });
 
     expect(verification.valid).toBe(true);
     expect(verification.files).toEqual([
       "model-metadata.ts",
+      "model-tests.ts",
       "models.ts",
       "query-helpers.ts",
       "schemas.ts",
       "types.ts",
     ]);
     expect(verification.operations.map(({ operation }) => operation)).toEqual([
+      "create",
       "create",
       "create",
       "create",

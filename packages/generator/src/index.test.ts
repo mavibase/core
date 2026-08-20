@@ -71,8 +71,9 @@ describe("generator", () => {
       "generated/query-helpers.ts",
       "generated/schemas.ts",
       "generated/types.ts",
+      "generated/model-tests.ts",
     ]);
-    expect(result.artifacts.length).toBe(5);
+    expect(result.artifacts.length).toBe(6);
     expect(modelArtifact.path).toBe("models.ts");
     expect(modelArtifact.content).toContain("export interface User {");
     expect(modelArtifact.content).toContain("  id: string;");
@@ -101,6 +102,7 @@ describe("generator", () => {
       "src/generated/query-helpers.ts",
       "src/generated/schemas.ts",
       "src/generated/types.ts",
+      "src/generated/model-tests.ts",
     ]);
   });
 
@@ -142,8 +144,9 @@ describe("generator", () => {
       "generated/query-helpers.ts",
       "generated/schemas.ts",
       "generated/types.ts",
+      "generated/model-tests.ts",
     ]);
-    expect(result.artifacts.length).toBe(6);
+    expect(result.artifacts.length).toBe(7);
     expect(artifact.content).toContain("export interface User {");
     expect(artifact.content).toContain("export interface Post {");
     expect(result.artifacts[2]?.content).toContain("export const UserRelationships = {");
