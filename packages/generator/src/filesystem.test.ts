@@ -1,9 +1,9 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { Filesystem, FilesystemError } from "./filesystem.js";
+import { Filesystem, FilesystemApplyError, FilesystemError } from "./filesystem.js";
 import { createGenerationManifest } from "./generation-manifest.js";
 
 const directories: string[] = [];
@@ -29,6 +29,10 @@ describe("filesystem abstraction", () => {
     expect(await filesystem.exists("models.ts")).toBe(false);
     const createPlan = await filesystem.write(first);
     expect(createPlan.operations.map(({ operation }) => operation)).toEqual(["create"]);
+    expect(createPlan.operations[0]).toMatchObject({
+      status: "applied",
+      code: "filesystem.create",
+    });
     expect(await filesystem.read("models.ts")).toBe(first[0]?.content);
     expect(await filesystem.compare("models.ts", first[0]?.content ?? "")).toEqual({
       exists: true,
@@ -136,5 +140,48 @@ describe("filesystem abstraction", () => {
     const conflict = await filesystem.plan([{ path: "models.ts", content: "newer\n" }]);
     expect(conflict.operations[0]?.operation).toBe("skip");
     expect(conflict.operations[0]?.reason).toContain("developer");
+    expect(conflict.operations[0]?.code).toBe("filesystem.conflict");
+  });
+
+  it("rolls back earlier mutations when a later operation fails", async () => {
+    const rootDir = await temporaryDirectory();
+    const initial = new Filesystem({ rootDir });
+    await initial.write([
+      { path: "a.ts", content: "a-old\n" },
+      { path: "b.ts", content: "b-old\n" },
+    ]);
+    const filesystem = new Filesystem({
+      rootDir,
+      failAfterOperation: 2,
+      generatedPaths: ["generated/a.ts", "generated/b.ts"],
+    });
+
+    await expect(
+      filesystem.write([
+        { path: "a.ts", content: "a-new\n" },
+        { path: "b.ts", content: "b-new\n" },
+      ]),
+    ).rejects.toBeInstanceOf(FilesystemApplyError);
+    expect(await readFile(join(rootDir, "generated", "a.ts"), "utf8")).toBe("a-old\n");
+    expect(await readFile(join(rootDir, "generated", "b.ts"), "utf8")).toBe("b-old\n");
+    expect((await readdir(join(rootDir, "generated"))).some((name) => name.includes("transaction"))).toBe(
+      false,
+    );
+  });
+
+  it("rejects symlink and reparse-point escapes", async () => {
+    const rootDir = await temporaryDirectory();
+    const outside = await temporaryDirectory();
+    await mkdir(join(rootDir, "generated"), { recursive: true });
+    try {
+      await symlink(outside, join(rootDir, "generated", "link"), process.platform === "win32" ? "junction" : "dir");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EPERM" || (error as NodeJS.ErrnoException).code === "EACCES") return;
+      throw error;
+    }
+    const filesystem = new Filesystem({ rootDir });
+    await expect(
+      filesystem.plan([{ path: "link/escape.ts", content: "unsafe" }]),
+    ).rejects.toBeInstanceOf(FilesystemError);
   });
 });

@@ -1,5 +1,5 @@
-import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { access, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import type { GeneratedFile } from "./index.js";
 import {
@@ -9,6 +9,7 @@ import {
 } from "./generation-manifest.js";
 
 export type FileOperation = "create" | "update" | "delete" | "skip";
+export type FileOperationStatus = "planned" | "applied" | "skipped" | "failed" | "rolled-back";
 
 export interface FilesystemOptions {
   rootDir: string;
@@ -18,6 +19,7 @@ export interface FilesystemOptions {
   generatedMarker?: string;
   manifest?: GenerationManifest;
   generator?: string;
+  failAfterOperation?: number;
 
   dryRun?: boolean;
 }
@@ -34,11 +36,38 @@ export interface FileOperationPlan {
   absolutePath: string;
   reason: string;
   content?: string;
+  status?: FileOperationStatus;
+  code?: string;
 }
 
 export interface WritePlan {
   operations: FileOperationPlan[];
   dryRun: boolean;
+}
+
+export interface FilesystemDiagnostic {
+  code: string;
+  message: string;
+  path?: string;
+}
+
+export class FilesystemApplyError extends Error {
+  readonly code = "filesystem.apply-failed";
+  readonly diagnostics: readonly FilesystemDiagnostic[];
+  readonly operations: readonly FileOperationPlan[];
+
+  constructor(
+    diagnostics: readonly FilesystemDiagnostic[],
+    operations: readonly FileOperationPlan[],
+    cause?: unknown,
+  ) {
+    super(`Filesystem apply failed: ${diagnostics.map((diagnostic) => diagnostic.message).join(" ")}`, {
+      cause,
+    });
+    this.name = "FilesystemApplyError";
+    this.diagnostics = diagnostics;
+    this.operations = operations;
+  }
 }
 
 export interface FilesystemErrorDetails {
@@ -104,6 +133,33 @@ function isWithin(root: string, candidate: string): boolean {
   );
 }
 
+function operationCode(operation: FileOperation, reason: string): string {
+  if (operation === "skip") {
+    if (reason.includes("protected")) return "filesystem.protected";
+    if (reason.includes("developer")) return "filesystem.conflict";
+    if (reason.includes("ownership")) return "filesystem.ownership-unknown";
+    if (reason.includes("unchanged")) return "filesystem.unchanged";
+    return "filesystem.skip";
+  }
+  return `filesystem.${operation}`;
+}
+
+function plannedOperation(operation: Omit<FileOperationPlan, "status" | "code">): FileOperationPlan {
+  return {
+    ...operation,
+    status: "planned",
+    code: operationCode(operation.operation, operation.reason),
+  };
+}
+
+function statusOperation(
+  operation: FileOperationPlan,
+  status: FileOperationStatus,
+  code = operation.code,
+): FileOperationPlan {
+  return { ...operation, status, ...(code === undefined ? {} : { code }) };
+}
+
 export class Filesystem {
   readonly rootDir: string;
   readonly targetRoot: string;
@@ -113,6 +169,7 @@ export class Filesystem {
   private readonly generatedMarker: string | undefined;
   private readonly manifest: GenerationManifest | undefined;
   private readonly generator: string;
+  private readonly failAfterOperation: number | undefined;
 
   constructor(options: FilesystemOptions) {
     this.rootDir = resolve(options.rootDir);
@@ -122,6 +179,7 @@ export class Filesystem {
     this.generatedMarker = options.generatedMarker;
     this.manifest = options.manifest?.targetRoot === this.targetRoot ? options.manifest : undefined;
     this.generator = options.generator ?? "mavibase-generator";
+    this.failAfterOperation = options.failAfterOperation;
     this.protectedPaths = new Set(
       (options.protectedPaths ?? []).map((path) =>
         normalizeRelativePath(path, "configure protected path"),
@@ -155,7 +213,50 @@ export class Filesystem {
     return { path: projectPath, absolutePath };
   }
 
+  private async ensureSafePath(path: string, operation: string): Promise<void> {
+    const resolved = this.projectPath(path, operation);
+    const root = resolve(this.rootDir);
+    const target = resolve(root, this.targetRoot || ".");
+    const relativePath = relative(root, resolved.absolutePath);
+    let current = root;
+    for (const part of relativePath.split(sep).filter(Boolean)) {
+      current = resolve(current, part);
+      try {
+        const stats = await lstat(current);
+        if (stats.isSymbolicLink()) {
+          throw new FilesystemError({
+            path,
+            operation,
+            reason: "a symlink or reparse point is present in the target path",
+            recommendation: "Use a target path whose existing parents and file are not links.",
+          });
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") break;
+        throw error;
+      }
+    }
+    try {
+      const [realRoot, realTarget, realCandidate] = await Promise.all([
+        realpath(root),
+        realpath(target),
+        realpath(resolved.absolutePath),
+      ]);
+      if (!isWithin(realRoot, realCandidate) || !isWithin(realTarget, realCandidate)) {
+        throw new FilesystemError({
+          path,
+          operation,
+          reason: "the resolved path escapes the configured target root",
+          recommendation: "Use a target path contained by the configured root.",
+        });
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+
   async exists(path: string): Promise<boolean> {
+    await this.ensureSafePath(path, "check existence");
     const resolved = this.projectPath(path, "check existence");
     try {
       await access(resolved.absolutePath);
@@ -167,6 +268,7 @@ export class Filesystem {
   }
 
   async read(path: string): Promise<string> {
+    await this.ensureSafePath(path, "read");
     const resolved = this.projectPath(path, "read");
     try {
       return await readFile(resolved.absolutePath, "utf8");
@@ -206,6 +308,7 @@ export class Filesystem {
       const artifact = unique.get(path);
       const artifactPath = this.targetRoot ? path.slice(`${this.targetRoot}/`.length) : path;
       const resolved = this.projectPath(artifactPath, "plan");
+      await this.ensureSafePath(artifactPath, "plan");
       const exists = await this.exists(artifactPath);
       const protectedPath = this.protectedPaths.has(path);
       const manifestFile = this.manifest?.files[artifactIdentity(artifactPath, this.generator)];
@@ -312,31 +415,133 @@ export class Filesystem {
         });
       }
     }
-    return { operations, dryRun: this.dryRun };
+    return {
+      operations: operations.map((operation) => plannedOperation(operation)),
+      dryRun: this.dryRun,
+    };
   }
 
   async apply(plan: WritePlan): Promise<WritePlan> {
     if (plan.dryRun || this.dryRun) return plan;
     for (const operation of plan.operations) {
       if (operation.operation === "skip") continue;
-      const resolved = this.projectPath(
-        this.targetRoot ? operation.path.slice(`${this.targetRoot}/`.length) : operation.path,
-        operation.operation,
+      const artifactPath = this.targetRoot
+        ? operation.path.slice(`${this.targetRoot}/`.length)
+        : operation.path;
+      await this.ensureSafePath(artifactPath, operation.operation);
+    }
+
+    const targetRoot = resolve(this.rootDir, this.targetRoot || ".");
+    if (this.targetRoot) await this.ensureSafePath(".mavibase-target-check", "apply");
+    await mkdir(targetRoot, { recursive: true });
+    const transactionRoot = await mkdtemp(join(targetRoot, ".mavibase-transaction-"));
+    const mutations = plan.operations.filter((operation) => operation.operation !== "skip");
+    const journal = new Map<string, Buffer | undefined>();
+    const touched: FileOperationPlan[] = [];
+    const staged = new Map<string, string>();
+    let mutationIndex = 0;
+
+    try {
+      for (const [index, operation] of mutations.entries()) {
+        const artifactPath = this.targetRoot
+          ? operation.path.slice(`${this.targetRoot}/`.length)
+          : operation.path;
+        const resolved = this.projectPath(artifactPath, operation.operation);
+        if (operation.operation === "create" || operation.operation === "update") {
+          const stagePath = join(transactionRoot, `${index}.stage`);
+          await writeFile(stagePath, operation.content ?? "", "utf8");
+          staged.set(operation.path, stagePath);
+        }
+        if (operation.operation === "update" || operation.operation === "delete") {
+          journal.set(resolved.absolutePath, await readFile(resolved.absolutePath));
+        } else {
+          journal.set(resolved.absolutePath, undefined);
+        }
+      }
+
+      const writes = mutations.filter(
+        (operation) => operation.operation === "create" || operation.operation === "update",
       );
-      try {
+      const deletes = mutations.filter((operation) => operation.operation === "delete");
+      for (const operation of [...writes, ...deletes]) {
+        const artifactPath = this.targetRoot
+          ? operation.path.slice(`${this.targetRoot}/`.length)
+          : operation.path;
+        const resolved = this.projectPath(artifactPath, operation.operation);
+        touched.push(operation);
         if (operation.operation === "delete") {
           await rm(resolved.absolutePath);
           this.generatedPaths.delete(operation.path);
         } else {
+          const stagePath = staged.get(operation.path);
+          if (!stagePath) throw new Error("staged content is missing");
           await mkdir(resolve(resolved.absolutePath, ".."), { recursive: true });
-          await writeFile(resolved.absolutePath, operation.content ?? "", "utf8");
+          try {
+            await rename(stagePath, resolved.absolutePath);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "EEXIST" && (error as NodeJS.ErrnoException).code !== "EPERM") {
+              throw error;
+            }
+            await rm(resolved.absolutePath, { force: true });
+            await rename(stagePath, resolved.absolutePath);
+          }
           this.generatedPaths.add(operation.path);
         }
-      } catch (error) {
-        throw this.error(operation.path, operation.operation, "filesystem operation failed", error);
+        mutationIndex += 1;
+        if (this.failAfterOperation !== undefined && mutationIndex >= this.failAfterOperation) {
+          throw new Error("failure injection requested");
+        }
       }
+
+      await rm(transactionRoot, { recursive: true, force: true });
+      return {
+        ...plan,
+        operations: plan.operations.map((operation) =>
+          operation.operation === "skip"
+            ? statusOperation(operation, "skipped")
+            : statusOperation(operation, "applied"),
+        ),
+      };
+    } catch (error) {
+      const rollbackFailures: FilesystemDiagnostic[] = [];
+      for (const operation of [...touched].reverse()) {
+        const artifactPath = this.targetRoot
+          ? operation.path.slice(`${this.targetRoot}/`.length)
+          : operation.path;
+        const resolved = this.projectPath(artifactPath, operation.operation);
+        try {
+          const original = journal.get(resolved.absolutePath);
+          if (original === undefined) await rm(resolved.absolutePath, { force: true });
+          else {
+            await mkdir(resolve(resolved.absolutePath, ".."), { recursive: true });
+            await writeFile(resolved.absolutePath, original);
+          }
+        } catch (rollbackError) {
+          rollbackFailures.push({
+            code: "filesystem.rollback-failed",
+            message: `Failed to restore "${operation.path}".`,
+            path: operation.path,
+          });
+          void rollbackError;
+        }
+      }
+      await rm(transactionRoot, { recursive: true, force: true });
+      const diagnostics: FilesystemDiagnostic[] = [
+        {
+          code: "filesystem.apply-failed",
+          message: "The filesystem transaction failed and rollback was attempted.",
+        },
+        ...rollbackFailures,
+      ];
+      const operationResults = plan.operations.map((operation) => {
+        if (operation.operation === "skip") return statusOperation(operation, "skipped");
+        if (touched.some((candidate) => candidate.path === operation.path)) {
+          return statusOperation(operation, "rolled-back", "filesystem.rolled-back");
+        }
+        return statusOperation(operation, "failed", "filesystem.apply-failed");
+      });
+      throw new FilesystemApplyError(diagnostics, operationResults, error);
     }
-    return plan;
   }
 
   async write(artifacts: readonly GeneratedFile[]): Promise<WritePlan> {
@@ -349,7 +554,7 @@ export class Filesystem {
     const resolved = this.projectPath(path, "delete");
     const knownPath = resolved.path;
     const exists = await this.exists(path);
-    const operation: FileOperationPlan = {
+    const operation = plannedOperation({
       operation:
         exists && this.generatedPaths.has(knownPath) && !this.protectedPaths.has(knownPath)
           ? "delete"
@@ -363,7 +568,7 @@ export class Filesystem {
           : this.generatedPaths.has(knownPath)
             ? "file is confirmed as generated"
             : "file is not confirmed as generated",
-    };
+    });
     return this.apply({ operations: [operation], dryRun: this.dryRun });
   }
 
