@@ -79,6 +79,24 @@ describe("zod generator", () => {
     expect(artifact?.content).toContain("  jsonValue: z.unknown(),");
   });
 
+  it("uses custom field validation expressions", () => {
+    const User = defineModel({
+      name: "User",
+      fields: { email: field.string().validate("z.string().email()") },
+    });
+    const graph = buildGraph({
+      name: "custom-validation-app",
+      version: "1.0.0",
+      environment: "development",
+      stack: { language: "typescript", runtime: "node" },
+      models: [User],
+    });
+
+    expect(generateZodSchemas(graph)?.content).toContain(
+      "  email: z.string().email(),",
+    );
+  });
+
   it("handles multiple models and non-identifier field names deterministically", () => {
     const First = defineModel({ name: "First", fields: { "display-name": field.string() } });
     const Second = defineModel({ name: "Second" });

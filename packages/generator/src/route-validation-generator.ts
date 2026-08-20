@@ -71,6 +71,12 @@ function routeParameters(route: GraphNode): RouteValidationParameter[] {
       }
       const schema = parameter["schema"];
       const type = parameter["type"];
+      const validation = parameter["validation"];
+      if (typeof validation === "string" && !validation.trim()) {
+        throw new RouteValidationGenerationError(
+          `Invalid validation expression for route parameter "${name}".`,
+        );
+      }
       if (typeof schema === "string" && !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(schema)) {
         throw new RouteValidationGenerationError(
           `Invalid schema reference for route parameter "${name}": "${schema}".`,
@@ -80,7 +86,9 @@ function routeParameters(route: GraphNode): RouteValidationParameter[] {
         name,
         location: location as ParameterLocation,
         schema:
-          typeof schema === "string" && schema.trim()
+          typeof validation === "string" && validation.trim()
+            ? validation
+            : typeof schema === "string" && schema.trim()
             ? schema
             : typeof type === "string" && type in fieldSchemaMap
               ? fieldSchemaMap[type as FieldType]

@@ -114,6 +114,44 @@ describe("route validation generator", () => {
     expect(content).toContain("body: UserSchema.optional(),");
   });
 
+  it("uses custom input validation and reusable schema references", () => {
+    const graph = buildGraph(
+      defineApp({
+        name: "composed-validation-app",
+        version: "1.0.0",
+        environment: "development",
+        stack: { language: "typescript", runtime: "node" },
+        models: [defineModel({ name: "User" })],
+        routes: [
+          defineRoute({
+            name: "users.create",
+            method: "POST",
+            path: "/users",
+            parameters: [
+              defineParameter({
+                name: "body",
+                location: "body",
+                schema: "UserSchema",
+              }),
+              defineParameter({
+                name: "email",
+                location: "query",
+                type: "string",
+                validation: "z.string().email()",
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+
+    const content = generateRouteValidation(graph)?.content;
+
+    expect(content).toContain('import { UserSchema } from "./schemas.js";');
+    expect(content).toContain("body: UserSchema.optional(),");
+    expect(content).toContain("email: z.string().email().optional()");
+  });
+
   it("rejects references to schemas that are not generated", () => {
     const graph = buildGraph(
       defineApp({

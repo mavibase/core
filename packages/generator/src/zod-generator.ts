@@ -136,7 +136,10 @@ function fieldSchema(node: GraphNode, modelName: string): ZodFieldTemplateData |
   }
 
   const fieldModifiers = getModifiers(node.data?.["modifiers"]);
-  let schema = fieldSchemaMap[type as FieldType];
+  let schema =
+    typeof node.data?.["validation"] === "string" && node.data["validation"].trim()
+      ? node.data["validation"]
+      : fieldSchemaMap[type as FieldType];
 
   if (fieldModifiers.optional === true) {
     schema += ".optional()";

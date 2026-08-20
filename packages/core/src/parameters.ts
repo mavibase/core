@@ -9,6 +9,7 @@ export interface RouteParameterDefinition {
   required: boolean;
   type?: FieldType;
   schema?: string;
+  validation?: string;
   description?: string;
 }
 
@@ -18,6 +19,7 @@ export interface DefineParameterInput {
   required?: boolean;
   type?: FieldType;
   schema?: string;
+  validation?: string;
   description?: string;
 }
 
@@ -37,6 +39,7 @@ export function defineParameter(input: DefineParameterInput): RouteParameterDefi
     required: input.required ?? input.location === "path",
     ...(input.type === undefined ? {} : { type: input.type }),
     ...(input.schema === undefined ? {} : { schema: input.schema }),
+    ...(input.validation === undefined ? {} : { validation: input.validation }),
     ...(input.description === undefined ? {} : { description: input.description }),
   };
 }

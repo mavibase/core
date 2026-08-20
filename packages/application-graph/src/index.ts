@@ -253,6 +253,7 @@ export function buildGraph(definition: ApplicationDefinition): ApplicationGraph 
           name: fieldName,
           type: fieldDef.type,
           modifiers: fieldDef.modifiers,
+          ...(fieldDef.validation === undefined ? {} : { validation: fieldDef.validation }),
         }),
       );
 

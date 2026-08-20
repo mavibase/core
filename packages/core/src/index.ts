@@ -102,6 +102,7 @@ export interface FieldModifiers {
 export interface FieldDefinition {
   type: FieldType;
   modifiers?: FieldModifiers;
+  validation?: string;
 }
 
 /** A field definition with chainable modifier methods */
@@ -116,6 +117,7 @@ export interface ModifiableField extends FieldDefinition {
   generated(): ModifiableField;
   readOnly(): ModifiableField;
   writeOnly(): ModifiableField;
+  validate(expression: string): ModifiableField;
 }
 
 /** Modifier methods live on the prototype so structural equality ignores them */
@@ -150,10 +152,18 @@ const fieldPrototype = {
   writeOnly(this: ModifiableField): ModifiableField {
     return withModifiers(this, { writeOnly: true });
   },
+  validate(this: ModifiableField, expression: string): ModifiableField {
+    if (!expression.trim()) throw new Error("Field validation expression must not be empty.");
+    return withValidation(this, expression);
+  },
 };
 
 /** Build a field from a type and optional modifiers */
-function createField(type: FieldType, modifiers?: FieldModifiers): ModifiableField {
+function createField(
+  type: FieldType,
+  modifiers?: FieldModifiers,
+  validation?: string,
+): ModifiableField {
   const definition = Object.create(fieldPrototype) as ModifiableField;
 
   definition.type = type;
@@ -162,15 +172,20 @@ function createField(type: FieldType, modifiers?: FieldModifiers): ModifiableFie
     definition.modifiers = modifiers;
   }
 
+  if (validation !== undefined) {
+    definition.validation = validation;
+  }
+
   return definition;
 }
 
 /** Return a new field with the given modifiers merged in */
 function withModifiers(field: ModifiableField, modifiers: FieldModifiers): ModifiableField {
-  return createField(field.type, {
-    ...field.modifiers,
-    ...modifiers,
-  });
+  return createField(field.type, { ...field.modifiers, ...modifiers }, field.validation);
+}
+
+function withValidation(field: ModifiableField, validation: string): ModifiableField {
+  return createField(field.type, field.modifiers, validation);
 }
 
 /** Factory for creating field definitions */
