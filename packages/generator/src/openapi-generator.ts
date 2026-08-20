@@ -1,6 +1,8 @@
 import type { ApplicationGraph, GraphNode } from "@mavibase/application-graph";
 
 import type { GeneratedFile } from "./index.js";
+import type { FieldDefinition, SemanticType } from "@mavibase/core";
+import { requireGeneratorFieldContext } from "./field-context.js";
 
 interface OpenApiParameter {
   name: string;
@@ -112,8 +114,19 @@ function modelComponents(graph: ApplicationGraph): Record<string, unknown> {
       const field = graph.nodes.find((node) => node.id === edge.to && node.type === "field");
       const fieldName = field ? value(field, "name") : undefined;
       if (!field || !fieldName) continue;
-      const type = field.data?.["type"];
-      properties[fieldName] = schemaFor(type);
+      const context = requireGeneratorFieldContext(
+        {
+          type: field.data?.["type"] as SemanticType,
+          ...(field.data?.["modifiers"] === undefined
+            ? {}
+            : { modifiers: field.data["modifiers"] as NonNullable<FieldDefinition["modifiers"]> }),
+          ...(field.data?.["validation"] === undefined
+            ? {}
+            : { validation: field.data["validation"] as string }),
+        },
+        `models.${modelName}.fields.${fieldName}`,
+      );
+      properties[fieldName] = context.openApiSchema;
       const modifiers = field.data?.["modifiers"];
       if (
         modifiers &&

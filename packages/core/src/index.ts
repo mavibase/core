@@ -67,8 +67,31 @@ export interface DefinitionsRegistry {
 }
 
 /** Mavibase field types */
-export type FieldType =
-  "string" | "integer" | "float" | "decimal" | "boolean" | "uuid" | "datetime" | "json";
+export type ScalarType =
+  | "string"
+  | "text"
+  | "integer"
+  | "float"
+  | "decimal"
+  | "boolean"
+  | "date"
+  | "datetime"
+  | "uuid"
+  | "json"
+  | "bigint";
+
+export interface EnumType {
+  kind: "enum";
+  values: readonly string[];
+}
+
+export interface ArrayType {
+  kind: "array";
+  element: SemanticType;
+}
+
+export type SemanticType = ScalarType | EnumType | ArrayType;
+export type FieldType = SemanticType;
 
 /** Modifiers that shape how a field behaves */
 export interface FieldModifiers {
@@ -105,8 +128,15 @@ export interface FieldModifiers {
 
 /** A field definition describes a single model field */
 export interface FieldDefinition {
-  type: FieldType;
+  type: SemanticType;
   modifiers?: FieldModifiers;
+  validation?: string;
+}
+
+export interface NormalizedField {
+  name: string;
+  type: SemanticType;
+  modifiers: Required<FieldModifiers>;
   validation?: string;
 }
 
@@ -165,7 +195,7 @@ const fieldPrototype = {
 
 /** Build a field from a type and optional modifiers */
 function createField(
-  type: FieldType,
+  type: SemanticType,
   modifiers?: FieldModifiers,
   validation?: string,
 ): ModifiableField {
@@ -198,6 +228,9 @@ export const field = {
   string(): ModifiableField {
     return createField("string");
   },
+  text(): ModifiableField {
+    return createField("text");
+  },
   integer(): ModifiableField {
     return createField("integer");
   },
@@ -216,8 +249,24 @@ export const field = {
   datetime(): ModifiableField {
     return createField("datetime");
   },
+  date(): ModifiableField {
+    return createField("date");
+  },
   json(): ModifiableField {
     return createField("json");
+  },
+  bigint(): ModifiableField {
+    return createField("bigint");
+  },
+  enum(values: readonly string[]): ModifiableField {
+    return createField({ kind: "enum", values: [...values] });
+  },
+  array(element: SemanticType | FieldDefinition): ModifiableField {
+    const semanticType =
+      typeof element === "object" && element !== null && "type" in element
+        ? element.type
+        : element;
+    return createField({ kind: "array", element: semanticType });
   },
 };
 
@@ -349,16 +398,36 @@ export interface ValidationIssue {
   message: string;
 }
 
-const VALID_FIELD_TYPES: readonly string[] = [
+const VALID_SCALAR_TYPES: readonly ScalarType[] = [
   "string",
+  "text",
   "integer",
   "float",
   "decimal",
   "boolean",
-  "uuid",
+  "date",
   "datetime",
+  "uuid",
   "json",
+  "bigint",
 ];
+
+export function isSemanticType(value: unknown): value is SemanticType {
+  if (typeof value === "string") {
+    return VALID_SCALAR_TYPES.includes(value as ScalarType);
+  }
+  if (!isRecord(value)) return false;
+  if (value["kind"] === "enum") {
+    const values = value["values"];
+    return (
+      Array.isArray(values) &&
+      values.length > 0 &&
+      values.every((item) => typeof item === "string") &&
+      new Set(values).size === values.length
+    );
+  }
+  return value["kind"] === "array" && isSemanticType(value["element"]);
+}
 
 const VALID_RELATIONSHIP_TYPES: readonly string[] = [
   "one-to-one",
@@ -687,7 +756,7 @@ export function validateDefinition(definition: unknown): ValidationIssue[] {
       const fieldType =
         fieldDef && typeof fieldDef === "object" && (fieldDef as Record<string, unknown>)["type"];
 
-      if (!VALID_FIELD_TYPES.includes(String(fieldType))) {
+      if (!isSemanticType(fieldType)) {
         issues.push({
           path: `models.${modelName}.fields.${name}.type`,
           message: `Invalid field type for "${modelName}.${name}".`,

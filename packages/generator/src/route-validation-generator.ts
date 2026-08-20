@@ -1,4 +1,4 @@
-import type { FieldType } from "@mavibase/core";
+import type { ScalarType } from "@mavibase/core";
 import type { ApplicationGraph, GraphNode } from "@mavibase/application-graph";
 
 import type { GeneratedFile } from "./index.js";
@@ -27,7 +27,7 @@ export class RouteValidationGenerationError extends Error {
   }
 }
 
-const fieldSchemaMap: Readonly<Record<FieldType, string>> = {
+const fieldSchemaMap: Readonly<Record<ScalarType, string>> = {
   string: "z.string()",
   integer: "z.number().int()",
   float: "z.number()",
@@ -36,6 +36,9 @@ const fieldSchemaMap: Readonly<Record<FieldType, string>> = {
   uuid: "z.string().uuid()",
   datetime: "z.coerce.date()",
   json: "z.unknown()",
+  text: "z.string()",
+  date: "z.coerce.date()",
+  bigint: "z.bigint()",
 };
 
 function nodeName(node: GraphNode): string | undefined {
@@ -91,7 +94,7 @@ function routeParameters(route: GraphNode): RouteValidationParameter[] {
             : typeof schema === "string" && schema.trim()
             ? schema
             : typeof type === "string" && type in fieldSchemaMap
-              ? fieldSchemaMap[type as FieldType]
+              ? fieldSchemaMap[type as ScalarType]
               : "z.unknown()",
         required: parameter["required"] === true,
       };

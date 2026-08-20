@@ -1,8 +1,13 @@
-import type { FieldModifiers, FieldType } from "@mavibase/core";
+import type { FieldDefinition, SemanticType } from "@mavibase/core";
 import type { ApplicationGraph, GraphNode } from "@mavibase/application-graph";
 
 import type { GeneratedFile } from "./index.js";
 import { defineTemplate } from "./template.js";
+import {
+  FieldContextError,
+  requireGeneratorFieldContext,
+  type GeneratorFieldContext,
+} from "./field-context.js";
 
 export interface ZodFieldTemplateData {
   name: string;
@@ -62,17 +67,6 @@ export const zodSchemasTemplate = defineTemplate<ZodSchemasTemplateData>(
   { name: "zod-schemas" },
 );
 
-const fieldSchemaMap: Readonly<Record<FieldType, string>> = {
-  string: "z.string()",
-  integer: "z.number().int()",
-  float: "z.number()",
-  decimal: "z.number()",
-  boolean: "z.boolean()",
-  uuid: "z.string().uuid()",
-  datetime: "z.coerce.date()",
-  json: "z.unknown()",
-};
-
 function propertyName(name: string): string {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) ? name : JSON.stringify(name);
 }
@@ -80,14 +74,6 @@ function propertyName(name: string): string {
 function nodeName(node: GraphNode): string | undefined {
   const name = node.data?.["name"];
   return typeof name === "string" && name.trim() ? name : undefined;
-}
-
-function getModifiers(data: unknown): FieldModifiers {
-  if (!data || typeof data !== "object") {
-    return {};
-  }
-
-  return data as FieldModifiers;
 }
 
 function defaultLiteral(value: unknown, path: string): string {
@@ -126,20 +112,38 @@ function fieldSchema(node: GraphNode, modelName: string): ZodFieldTemplateData |
     return undefined;
   }
 
-  const type = node.data?.["type"];
-  if (typeof type !== "string" || !(type in fieldSchemaMap)) {
-    throw new ZodGenerationError({
-      path: `models.${modelName}.fields.${name}.type`,
-      reason: `unsupported field type "${String(type)}"`,
-      recommendation: "Use a field type supported by the Mavibase field system.",
-    });
+  let context: GeneratorFieldContext;
+  try {
+    context = requireGeneratorFieldContext(
+      {
+        type: node.data?.["type"] as SemanticType,
+        ...(node.data?.["modifiers"] === undefined
+          ? {}
+          : { modifiers: node.data["modifiers"] as NonNullable<FieldDefinition["modifiers"]> }),
+        ...(node.data?.["validation"] === undefined
+          ? {}
+          : { validation: node.data["validation"] as string }),
+      },
+      `models.${modelName}.fields.${name}`,
+    );
+  } catch (error) {
+    if (error instanceof FieldContextError) {
+      throw new ZodGenerationError(
+        {
+          path: `models.${modelName}.fields.${name}.type`,
+          reason: "unsupported field type",
+          recommendation: "Use a field type supported by the Mavibase field system.",
+        },
+        error,
+      );
+    }
+    throw error;
   }
-
-  const fieldModifiers = getModifiers(node.data?.["modifiers"]);
-  let schema =
-    typeof node.data?.["validation"] === "string" && node.data["validation"].trim()
-      ? node.data["validation"]
-      : fieldSchemaMap[type as FieldType];
+  const fieldModifiers =
+    node.data?.["modifiers"] && typeof node.data["modifiers"] === "object"
+      ? (node.data["modifiers"] as Record<string, unknown>)
+      : {};
+  let schema = context.zodExpression;
 
   if (fieldModifiers.optional === true) {
     schema += ".optional()";

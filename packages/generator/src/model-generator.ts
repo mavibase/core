@@ -1,8 +1,9 @@
-import type { FieldModifiers, FieldType } from "@mavibase/core";
+import type { FieldDefinition, SemanticType } from "@mavibase/core";
 import type { ApplicationGraph, GraphNode } from "@mavibase/application-graph";
 
 import type { GeneratedFile } from "./index.js";
 import { defineTemplate } from "./template.js";
+import { requireGeneratorFieldContext } from "./field-context.js";
 
 export interface ModelFieldTemplateData {
   name: string;
@@ -22,7 +23,7 @@ export interface ModelsTemplateData {
 }
 
 export interface ModelMetadataFieldTemplateData {
-  type: string;
+  type: SemanticType;
   required: boolean;
   optional: boolean;
   nullable: boolean;
@@ -42,17 +43,6 @@ export interface ModelMetadataTemplateData {
     fields: Record<string, ModelMetadataFieldTemplateData>;
   }[];
 }
-
-const fieldTypeMap: Readonly<Record<FieldType, string>> = {
-  string: "string",
-  integer: "number",
-  float: "number",
-  decimal: "number",
-  boolean: "boolean",
-  uuid: "string",
-  datetime: "Date",
-  json: "unknown",
-};
 
 export const modelsTemplate = defineTemplate<ModelsTemplateData>(
   ({ models }) =>
@@ -109,22 +99,6 @@ export const modelMetadataTemplate = defineTemplate<ModelMetadataTemplateData>(
   { name: "model-metadata" },
 );
 
-function fieldType(type: unknown): string {
-  if (typeof type !== "string" || !(type in fieldTypeMap)) {
-    return "unknown";
-  }
-
-  return fieldTypeMap[type as FieldType];
-}
-
-function modifiers(data: unknown): FieldModifiers {
-  if (!data || typeof data !== "object") {
-    return {};
-  }
-
-  return data as FieldModifiers;
-}
-
 function nodeName(node: GraphNode): string | undefined {
   const name = node.data?.["name"];
   return typeof name === "string" && name.trim() ? name : undefined;
@@ -141,13 +115,24 @@ function modelFields(graph: ApplicationGraph, model: GraphNode): ModelFieldTempl
         return undefined;
       }
 
-      const fieldModifiers = modifiers(node.data?.["modifiers"]);
+      const context = requireGeneratorFieldContext(
+        {
+          type: node.data?.["type"] as SemanticType,
+          ...(node.data?.["modifiers"] === undefined
+            ? {}
+            : { modifiers: node.data["modifiers"] as NonNullable<FieldDefinition["modifiers"]> }),
+          ...(node.data?.["validation"] === undefined
+            ? {}
+            : { validation: node.data["validation"] as string }),
+        },
+        `models.${nodeName(model) ?? model.id}.fields.${fieldName}`,
+      );
       return {
         name: fieldName,
-        type: fieldType(node.data?.["type"]),
-        optional: fieldModifiers.optional === true,
-        nullable: fieldModifiers.nullable === true,
-        readonly: fieldModifiers.readOnly === true,
+        type: context.typescriptType,
+        optional: context.optional,
+        nullable: context.nullable,
+        readonly: context.readOnly,
       } satisfies ModelFieldTemplateData;
     })
     .filter((field): field is ModelFieldTemplateData => field !== undefined);
@@ -203,19 +188,36 @@ function modelMetadataFields(
     .map((node): readonly [string, ModelMetadataFieldTemplateData] | undefined => {
       const name = nodeName(node);
       if (!name) return undefined;
-      const fieldModifiers = modifiers(node.data?.["modifiers"]);
+      const context = requireGeneratorFieldContext(
+        {
+          type: node.data?.["type"] as SemanticType,
+          ...(node.data?.["modifiers"] === undefined
+            ? {}
+            : { modifiers: node.data["modifiers"] as NonNullable<FieldDefinition["modifiers"]> }),
+          ...(node.data?.["validation"] === undefined
+            ? {}
+            : { validation: node.data["validation"] as string }),
+        },
+        `models.${nodeName(model) ?? model.id}.fields.${name}`,
+      );
+      const rawModifiers =
+        node.data?.["modifiers"] && typeof node.data["modifiers"] === "object"
+          ? (node.data["modifiers"] as Record<string, unknown>)
+          : {};
       const metadata: ModelMetadataFieldTemplateData = {
-        type: typeof node.data?.["type"] === "string" ? node.data["type"] : "unknown",
-        required: fieldModifiers.required === true,
-        optional: fieldModifiers.optional === true,
-        nullable: fieldModifiers.nullable === true,
-        unique: fieldModifiers.unique === true,
-        indexed: fieldModifiers.indexed === true,
-        primary: fieldModifiers.primary === true,
-        generated: fieldModifiers.generated === true,
-        readOnly: fieldModifiers.readOnly === true,
-        writeOnly: fieldModifiers.writeOnly === true,
-        ...(fieldModifiers.default === undefined ? {} : { defaultValue: fieldModifiers.default }),
+        type: context.semanticType,
+        required: rawModifiers.required === true,
+        optional: context.optional,
+        nullable: context.nullable,
+        unique: rawModifiers.unique === true,
+        indexed: rawModifiers.indexed === true,
+        primary: rawModifiers.primary === true,
+        generated: rawModifiers.generated === true,
+        readOnly: context.readOnly,
+        writeOnly: context.writeOnly,
+        ...(rawModifiers.default === undefined
+          ? {}
+          : { defaultValue: rawModifiers.default }),
       };
       return [name, metadata];
     })
