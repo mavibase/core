@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { defineModel, field } from "@mavibase/core";
+import { defineModel, field, relationship } from "@mavibase/core";
 import { buildGraph } from "@mavibase/application-graph";
 
 import { generateZodSchemas, ZodGenerationError, zodTemplateData } from "./zod-generator.js";
@@ -96,6 +96,52 @@ describe("zod generator", () => {
     expect(artifact?.content?.indexOf("FirstSchema")).toBeLessThan(
       artifact?.content?.indexOf("SecondSchema") ?? -1,
     );
+  });
+
+  it("generates lazy schemas for relationship fields", () => {
+    const User = defineModel({
+      name: "User",
+      relationships: {
+        posts: relationship.oneToMany().to("Post"),
+      },
+    });
+    const Post = defineModel({
+      name: "Post",
+      relationships: {
+        author: relationship.manyToOne().to("User"),
+      },
+    });
+    const graph = buildGraph({
+      name: "relationship-app",
+      version: "1.0.0",
+      environment: "development",
+      stack: { language: "typescript", runtime: "node" },
+      models: [User, Post],
+    });
+
+    expect(generateZodSchemas(graph)?.content).toContain(
+      "  posts: z.array(z.lazy(() => PostSchema)),",
+    );
+    expect(generateZodSchemas(graph)?.content).toContain(
+      "  author: z.lazy(() => UserSchema),",
+    );
+  });
+
+  it("rejects relationships without targets", () => {
+    const graph = buildGraph({
+      name: "invalid-relationship",
+      version: "1.0.0",
+      environment: "development",
+      stack: { language: "typescript", runtime: "node" },
+      models: [
+        defineModel({
+          name: "User",
+          relationships: { posts: relationship.oneToMany() },
+        }),
+      ],
+    });
+
+    expect(() => generateZodSchemas(graph)).toThrow("relationship target is missing");
   });
 
   it("rejects unsupported field types", () => {

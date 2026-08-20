@@ -12,6 +12,7 @@ export interface ZodFieldTemplateData {
 export interface ZodModelTemplateData {
   name: string;
   fields: ZodFieldTemplateData[];
+  relationships: ZodFieldTemplateData[];
 }
 
 export interface ZodSchemasTemplateData {
@@ -47,6 +48,10 @@ export const zodSchemasTemplate = defineTemplate<ZodSchemasTemplateData>(
 
       for (const field of model.fields) {
         lines.push(`  ${propertyName(field.name)}: ${field.schema},`);
+      }
+
+      for (const relationship of model.relationships) {
+        lines.push(`  ${propertyName(relationship.name)}: ${relationship.schema},`);
       }
 
       lines.push("});", "");
@@ -148,6 +153,43 @@ function fieldSchema(node: GraphNode, modelName: string): ZodFieldTemplateData |
   return { name, schema };
 }
 
+function relationshipSchema(
+  node: GraphNode,
+  modelName: string,
+): ZodFieldTemplateData | undefined {
+  const name = nodeName(node);
+  if (!name) {
+    return undefined;
+  }
+
+  const target = node.data?.["model"];
+  if (typeof target !== "string" || !target.trim()) {
+    throw new ZodGenerationError({
+      path: `models.${modelName}.relationships.${name}.model`,
+      reason: "relationship target is missing",
+      recommendation: "Define a target model for the relationship.",
+    });
+  }
+
+  const type = node.data?.["type"];
+  const collection = type === "one-to-many" || type === "many-to-many";
+  if (
+    type !== "one-to-one" &&
+    type !== "one-to-many" &&
+    type !== "many-to-one" &&
+    type !== "many-to-many"
+  ) {
+    throw new ZodGenerationError({
+      path: `models.${modelName}.relationships.${name}.type`,
+      reason: `unsupported relationship type "${String(type)}"`,
+      recommendation: "Use a relationship type supported by the Mavibase relationship system.",
+    });
+  }
+
+  const schema = `z.lazy(() => ${target}Schema)`;
+  return { name, schema: collection ? `z.array(${schema})` : schema };
+}
+
 export function zodTemplateData(graph: ApplicationGraph): ZodSchemasTemplateData {
   const models = graph.nodes
     .filter((node) => node.type === "model")
@@ -161,7 +203,15 @@ export function zodTemplateData(graph: ApplicationGraph): ZodSchemasTemplateData
         .filter((field): field is ZodFieldTemplateData => field !== undefined)
         .sort((left, right) => left.name.localeCompare(right.name));
 
-      return { name: modelName, fields } satisfies ZodModelTemplateData;
+      const relationships = graph.edges
+        .filter((edge) => edge.from === model.id && edge.type === "has-relationship")
+        .map((edge) => graph.nodes.find((node) => node.id === edge.to))
+        .filter((node): node is GraphNode => node?.type === "relationship")
+        .map((node) => relationshipSchema(node, modelName))
+        .filter((relationship): relationship is ZodFieldTemplateData => relationship !== undefined)
+        .sort((left, right) => left.name.localeCompare(right.name));
+
+      return { name: modelName, fields, relationships } satisfies ZodModelTemplateData;
     })
     .sort((left, right) => left.name.localeCompare(right.name));
 
