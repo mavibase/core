@@ -3,6 +3,7 @@ import type { ApplicationGraph } from "@mavibase/application-graph";
 import { buildGraph } from "@mavibase/application-graph";
 
 import { generateModelMetadata, generateModels } from "./model-generator.js";
+import { generateRelationships } from "./relationship-generator.js";
 import { generateTypes } from "./type-generator.js";
 import { generateZodSchemas } from "./zod-generator.js";
 
@@ -44,6 +45,12 @@ export function generate(graph: ApplicationGraph, options?: GenerateOptions): Ge
     artifacts.push(modelMetadataFile);
   }
 
+  const relationshipFile = generateRelationships(graph);
+
+  if (relationshipFile) {
+    artifacts.push(relationshipFile);
+  }
+
   const zodFile = generateZodSchemas(graph);
 
   if (zodFile) {
@@ -78,6 +85,7 @@ export * from "./filesystem.js";
 export * from "./generated-code-testing.js";
 export * from "./database-validation.js";
 export * from "./model-generator.js";
+export * from "./relationship-generator.js";
 export * from "./migration-generator.js";
 export * from "./postgresql-generator.js";
 export * from "./sql-generator.js";

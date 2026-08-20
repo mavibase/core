@@ -136,10 +136,13 @@ describe("generator", () => {
     expect(result.files).toEqual([
       "generated/models.ts",
       "generated/model-metadata.ts",
+      "generated/relationships.ts",
       "generated/schemas.ts",
       "generated/types.ts",
     ]);
+    expect(result.artifacts.length).toBe(5);
     expect(artifact.content).toContain("export interface User {");
     expect(artifact.content).toContain("export interface Post {");
+    expect(result.artifacts[2]?.content).toContain("export const UserRelationships = {");
   });
 });
