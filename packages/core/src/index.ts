@@ -5,6 +5,7 @@ import type {
   Runtime,
   WebFramework,
 } from "@mavibase/config";
+import { createDefaultStackRegistries } from "@mavibase/config";
 
 import { isRouteMethod, type RouteDefinition } from "./routes.js";
 import { validateRouteParameters, type DefineParameterInput } from "./parameters.js";
@@ -362,17 +363,161 @@ const VALID_RELATIONSHIP_TYPES: readonly string[] = [
   "many-to-many",
 ];
 
+const VALID_ENVIRONMENTS: readonly AppEnvironment[] = ["development", "test", "production"];
+const VALID_LANGUAGES: readonly Language[] = ["javascript", "typescript"];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isSemver(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(
+      value,
+    )
+  );
+}
+
+function validateStackReference(
+  stack: Record<string, unknown>,
+  issues: ValidationIssue[],
+): void {
+  const registries = createDefaultStackRegistries();
+  const language = stack["language"];
+  const runtime = stack["runtime"];
+
+  if (!VALID_LANGUAGES.includes(language as Language)) {
+    issues.push({
+      path: "stack.language",
+      message: `Invalid stack language: "${String(language)}".`,
+    });
+  }
+
+  if (!isNonEmptyString(runtime) || !registries.runtimes.get(runtime)) {
+    issues.push({
+      path: "stack.runtime",
+      message: `Invalid stack runtime: "${String(runtime)}".`,
+    });
+  }
+
+  const references: readonly [string, string, "framework" | "database"][] = [
+    ["web", "framework", "framework"],
+    ["backend", "framework", "framework"],
+    ["database", "provider", "database"],
+  ];
+
+  for (const [sectionName, referenceName, referenceType] of references) {
+    const section = stack[sectionName];
+    if (section === undefined) continue;
+    if (!isRecord(section)) {
+      issues.push({
+        path: `stack.${sectionName}`,
+        message: `Stack ${sectionName} configuration must be an object.`,
+      });
+      continue;
+    }
+
+    const reference = section[referenceName];
+    const registry = referenceType === "framework" ? registries.frameworks : registries.databases;
+    if (!isNonEmptyString(reference) || !registry.get(reference)) {
+      issues.push({
+        path: `stack.${sectionName}.${referenceName}`,
+        message: `Invalid stack ${referenceType} reference: "${String(reference)}".`,
+      });
+    }
+  }
+}
+
 /** Validate a definition and return any issues found */
 export function validateDefinition(definition: unknown): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
 
-  if (!definition || typeof definition !== "object") {
+  if (!isRecord(definition)) {
+    issues.push({
+      path: "definition",
+      message: "Application definition must be an object.",
+    });
     return issues;
   }
 
-  const candidate = definition as Record<string, unknown>;
+  const candidate = definition;
+  const name = candidate["name"];
+  const versionValue = candidate["version"];
+  const environment = candidate["environment"];
+  const stackConfig = candidate["stack"];
+
+  if (!isNonEmptyString(name)) {
+    issues.push({
+      path: "name",
+      message: "Application name must not be empty.",
+    });
+  }
+  if (!isSemver(versionValue)) {
+    issues.push({
+      path: "version",
+      message: `Invalid application version: "${String(versionValue)}". Expected semver.`,
+    });
+  }
+  if (!VALID_ENVIRONMENTS.includes(environment as AppEnvironment)) {
+    issues.push({
+      path: "environment",
+      message: `Invalid application environment: "${String(environment)}".`,
+    });
+  }
+  if (!isRecord(stackConfig)) {
+    issues.push({
+      path: "stack",
+      message: "Application stack configuration must be an object.",
+    });
+  } else {
+    validateStackReference(stackConfig, issues);
+  }
+
+  const features = candidate["features"];
+  if (features !== undefined) {
+    if (!isRecord(features)) {
+      issues.push({ path: "features", message: "Application features must be an object." });
+    } else {
+      for (const feature of [
+        "authentication",
+        "authorization",
+        "validation",
+        "rateLimiting",
+        "apiClients",
+        "tests",
+      ]) {
+        if (features[feature] !== undefined && typeof features[feature] !== "boolean") {
+          issues.push({
+            path: `features.${feature}`,
+            message: `Application feature "${feature}" must be a boolean.`,
+          });
+        }
+      }
+    }
+  }
+
+  const definitions = candidate["definitions"];
+  if (definitions !== undefined && !isRecord(definitions)) {
+    issues.push({
+      path: "definitions",
+      message: "Application definitions registry must be an object.",
+    });
+  }
+
   const rawModels = candidate["models"];
   const rawRoutes = candidate["routes"];
+
+  if (rawModels !== undefined && !Array.isArray(rawModels)) {
+    issues.push({ path: "models", message: "Application models must be an array." });
+  }
+  if (rawRoutes !== undefined && !Array.isArray(rawRoutes)) {
+    issues.push({ path: "routes", message: "Application routes must be an array." });
+  }
 
   const models = Array.isArray(rawModels) ? rawModels : [];
   const routes = Array.isArray(rawRoutes) ? rawRoutes : [];
@@ -391,8 +536,11 @@ export function validateDefinition(definition: unknown): ValidationIssue[] {
   const routeNames = new Set<string>();
   const routeSignatures = new Set<string>();
   for (const route of routes) {
-    if (!route || typeof route !== "object") continue;
-    const routeObj = route as Record<string, unknown>;
+    if (!isRecord(route)) {
+      issues.push({ path: "routes", message: "Every route must be an object." });
+      continue;
+    }
+    const routeObj = route;
     const routeName = routeObj["name"];
     const method = routeObj["method"];
     const path = routeObj["path"];
@@ -421,6 +569,12 @@ export function validateDefinition(definition: unknown): ValidationIssue[] {
         message: `Invalid route path: "${String(path)}".`,
       });
     }
+    if (parameters !== undefined && !Array.isArray(parameters)) {
+      issues.push({
+        path: `routes.${String(routeName)}.parameters`,
+        message: "Route parameters must be an array.",
+      });
+    }
     if (Array.isArray(parameters) && typeof path === "string") {
       for (const issue of validateRouteParameters(path, parameters as DefineParameterInput[])) {
         issues.push({
@@ -428,6 +582,12 @@ export function validateDefinition(definition: unknown): ValidationIssue[] {
           message: issue.message,
         });
       }
+    }
+    if (responses !== undefined && !Array.isArray(responses)) {
+      issues.push({
+        path: `routes.${String(routeName)}.responses`,
+        message: "Route responses must be an array.",
+      });
     }
     if (Array.isArray(responses)) {
       const statuses = new Set<number>();
@@ -475,14 +635,16 @@ export function validateDefinition(definition: unknown): ValidationIssue[] {
   const seen = new Set<string>();
 
   for (const model of models) {
-    if (!model || typeof model !== "object") {
+    if (!isRecord(model)) {
+      issues.push({ path: "models", message: "Every model must be an object." });
       continue;
     }
 
-    const modelObj = model as Record<string, unknown>;
+    const modelObj = model;
     const modelName = modelObj["name"];
 
-    if (typeof modelName !== "string") {
+    if (!isNonEmptyString(modelName)) {
+      issues.push({ path: "models.name", message: "Model name must not be empty." });
       continue;
     }
 
@@ -497,11 +659,11 @@ export function validateDefinition(definition: unknown): ValidationIssue[] {
   }
 
   for (const model of models) {
-    if (!model || typeof model !== "object") {
+    if (!isRecord(model)) {
       continue;
     }
 
-    const modelObj = model as Record<string, unknown>;
+    const modelObj = model;
     const modelName = modelObj["name"];
 
     if (typeof modelName !== "string") {
@@ -509,8 +671,13 @@ export function validateDefinition(definition: unknown): ValidationIssue[] {
     }
 
     const fields = modelObj["fields"];
-    const fieldEntries =
-      fields && typeof fields === "object" ? Object.entries(fields as Record<string, unknown>) : [];
+    if (fields !== undefined && !isRecord(fields)) {
+      issues.push({
+        path: `models.${String(modelName)}.fields`,
+        message: "Model fields must be an object.",
+      });
+    }
+    const fieldEntries = isRecord(fields) ? Object.entries(fields) : [];
 
     for (const [name, fieldDef] of fieldEntries) {
       const fieldType =
@@ -525,14 +692,24 @@ export function validateDefinition(definition: unknown): ValidationIssue[] {
     }
 
     const relationships = modelObj["relationships"];
-    const relationshipEntries =
-      relationships && typeof relationships === "object"
-        ? Object.entries(relationships as Record<string, unknown>)
-        : [];
+    if (relationships !== undefined && !isRecord(relationships)) {
+      issues.push({
+        path: `models.${String(modelName)}.relationships`,
+        message: "Model relationships must be an object.",
+      });
+    }
+    const relationshipEntries = isRecord(relationships) ? Object.entries(relationships) : [];
 
     for (const [name, relDef] of relationshipEntries) {
       const relObj =
-        relDef && typeof relDef === "object" ? (relDef as Record<string, unknown>) : undefined;
+        isRecord(relDef) ? relDef : undefined;
+
+      if (!relObj) {
+        issues.push({
+          path: `models.${String(modelName)}.relationships.${name}`,
+          message: "Relationship definition must be an object.",
+        });
+      }
 
       const relType =
         relObj && typeof relObj === "object" && (relObj as Record<string, unknown>)["type"];
@@ -596,8 +773,7 @@ export function validateDefinition(definition: unknown): ValidationIssue[] {
 
       if (relationships && typeof relationships === "object") {
         for (const relDef of Object.values(relationships as Record<string, unknown>)) {
-          const relObj =
-            relDef && typeof relDef === "object" ? (relDef as Record<string, unknown>) : undefined;
+          const relObj = isRecord(relDef) ? relDef : undefined;
 
           const targetModel = relObj && relObj["model"];
 
@@ -615,8 +791,8 @@ export function validateDefinition(definition: unknown): ValidationIssue[] {
   };
 
   for (const model of models) {
-    if (model && typeof model === "object") {
-      const modelName = (model as Record<string, unknown>)["name"];
+    if (isRecord(model)) {
+      const modelName = model["name"];
 
       if (typeof modelName === "string") {
         visit(modelName);
@@ -629,11 +805,11 @@ export function validateDefinition(definition: unknown): ValidationIssue[] {
 
 /** Define a Mavibase application */
 export function defineApp(definition: ApplicationDefinition): ApplicationDefinition {
-  if (!definition.name.trim()) {
+  if (!isRecord(definition) || !isNonEmptyString(definition["name"])) {
     throw new Error("Application name must not be empty.");
   }
 
-  if (!/^\d+\.\d+\.\d+/.test(definition.version)) {
+  if (!isSemver(definition["version"])) {
     throw new Error(`Invalid application version: "${definition.version}". Expected semver.`);
   }
 

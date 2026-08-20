@@ -141,6 +141,17 @@ describe("core", () => {
     ).toThrow('Invalid application version: "latest". Expected semver.');
   });
 
+  it("rejects malformed top-level application input", () => {
+    expect(() => defineApp({} as never)).toThrow("Application name must not be empty.");
+    expect(() => defineApp({
+      name: "my-app",
+      version: "1.0.0",
+      environment: "development",
+      stack: { language: "typescript", runtime: "node" },
+      models: {} as never,
+    })).toThrow("Application models must be an array.");
+  });
+
   it("accepts a valid semver version", () => {
     const app = defineApp({
       name: "my-app",
@@ -661,14 +672,26 @@ describe("core", () => {
       expect(issues).toEqual([]);
     });
 
-    it("returns no issues for a non-object definition", () => {
-      expect(validateDefinition(null)).toEqual([]);
-      expect(validateDefinition(undefined)).toEqual([]);
-      expect(validateDefinition("not-a-definition")).toEqual([]);
-      expect(validateDefinition(42)).toEqual([]);
+    it("reports a non-object definition", () => {
+      expect(validateDefinition(null)).toContainEqual({
+        path: "definition",
+        message: "Application definition must be an object.",
+      });
+      expect(validateDefinition(undefined)).toContainEqual({
+        path: "definition",
+        message: "Application definition must be an object.",
+      });
+      expect(validateDefinition("not-a-definition")).toContainEqual({
+        path: "definition",
+        message: "Application definition must be an object.",
+      });
+      expect(validateDefinition(42)).toContainEqual({
+        path: "definition",
+        message: "Application definition must be an object.",
+      });
     });
 
-    it("ignores models without a name", () => {
+    it("reports models without a name", () => {
       const issues = validateDefinition({
         name: "my-app",
         version: "1.0.0",
@@ -680,7 +703,10 @@ describe("core", () => {
         models: [{ id: "no-name" }],
       });
 
-      expect(issues).toEqual([]);
+      expect(issues).toContainEqual({
+        path: "models.name",
+        message: "Model name must not be empty.",
+      });
     });
 
     it("reports multiple issues in a single definition", () => {
@@ -721,7 +747,87 @@ describe("core", () => {
         models: [defineModel({ name: "User" })],
       });
 
-      expect(issues).toEqual([]);
+      expect(issues).toContainEqual({
+        path: "name",
+        message: "Application name must not be empty.",
+      });
+      expect(issues).toContainEqual({
+        path: "version",
+        message: 'Invalid application version: "undefined". Expected semver.',
+      });
+      expect(issues).toContainEqual({
+        path: "environment",
+        message: 'Invalid application environment: "undefined".',
+      });
+      expect(issues).toContainEqual({
+        path: "stack",
+        message: "Application stack configuration must be an object.",
+      });
+    });
+
+    it("reports incorrectly typed top-level collections", () => {
+      const issues = validateDefinition({
+        name: "my-app",
+        version: "1.0.0",
+        environment: "development",
+        stack: { language: "typescript", runtime: "node" },
+        models: {},
+        routes: {},
+      });
+
+      expect(issues).toContainEqual({
+        path: "models",
+        message: "Application models must be an array.",
+      });
+      expect(issues).toContainEqual({
+        path: "routes",
+        message: "Application routes must be an array.",
+      });
+    });
+
+    it("reports invalid environment, stack references, features, and definitions", () => {
+      const issues = validateDefinition({
+        name: "my-app",
+        version: "1.0.0",
+        environment: "preview",
+        stack: {
+          language: "ruby",
+          runtime: "unknown",
+          web: { framework: "unknown" },
+          database: { provider: "unknown" },
+        },
+        features: { validation: "yes" },
+        definitions: [],
+      });
+
+      expect(issues).toContainEqual({
+        path: "environment",
+        message: 'Invalid application environment: "preview".',
+      });
+      expect(issues).toContainEqual({
+        path: "stack.language",
+        message: 'Invalid stack language: "ruby".',
+      });
+      expect(issues).toContainEqual({
+        path: "stack.runtime",
+        message: 'Invalid stack runtime: "unknown".',
+      });
+      expect(issues).toContainEqual({
+        path: "stack.web.framework",
+        message: 'Invalid stack framework reference: "unknown".',
+      });
+      expect(issues).toContainEqual({
+        path: "stack.database.provider",
+        message: 'Invalid stack database reference: "unknown".',
+      });
+      expect(issues).toContainEqual({
+        path: "features.validation",
+        message: 'Application feature "validation" must be a boolean.',
+      });
+      expect(issues).toContainEqual({
+        path: "definitions",
+        message: "Application definitions registry must be an object.",
+      });
     });
   });
 
