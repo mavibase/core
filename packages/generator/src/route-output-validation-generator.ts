@@ -1,0 +1,130 @@
+import type { ApplicationGraph, GraphNode } from "@mavibase/application-graph";
+
+import type { GeneratedFile } from "./index.js";
+import { defineTemplate } from "./template.js";
+
+interface OutputResponseTemplateData {
+  status: number;
+  schema: string;
+}
+
+export interface RouteOutputValidationTemplateData {
+  name: string;
+  exportName: string;
+  responses: OutputResponseTemplateData[];
+  schemaReferences: string[];
+}
+
+export class RouteOutputValidationGenerationError extends Error {
+  readonly code = "MAVIBASE_ROUTE_OUTPUT_VALIDATION_GENERATION_ERROR";
+
+  constructor(message: string) {
+    super(message);
+    this.name = "RouteOutputValidationGenerationError";
+  }
+}
+
+function nodeName(node: GraphNode): string | undefined {
+  const name = node.data?.["name"];
+  return typeof name === "string" && name.trim() ? name : undefined;
+}
+
+function exportName(name: string): string {
+  const value = name
+    .split(/[^A-Za-z0-9_$]+/)
+    .filter(Boolean)
+    .map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
+    .join("");
+  return `${value || "Route"}ResponseSchemas`;
+}
+
+function responseSchema(status: number, schema: unknown, routeName: string): string {
+  if (typeof schema === "string" && /^[A-Za-z_$][A-Za-z0-9_$]*Schema$/.test(schema)) {
+    return schema;
+  }
+  if (schema !== undefined) {
+    throw new RouteOutputValidationGenerationError(
+      `Invalid response schema reference for route "${routeName}": "${String(schema)}".`,
+    );
+  }
+  return status === 204 || status === 304 ? "z.void()" : "z.unknown()";
+}
+
+export const routeOutputValidationTemplate = defineTemplate<RouteOutputValidationTemplateData[]>(
+  (routes) => {
+    const references = [
+      ...new Set(routes.flatMap((route) => route.schemaReferences)),
+    ].sort((left, right) => left.localeCompare(right));
+    const lines = [
+      'import { z } from "zod";',
+      ...references.map((reference) => `import { ${reference} } from "./schemas.js";`),
+      "",
+    ];
+
+    for (const route of routes) {
+      lines.push(`export const ${route.exportName} = {`);
+      for (const response of route.responses) {
+        lines.push(`  ${response.status}: ${response.schema},`);
+      }
+      lines.push("} as const;", "");
+    }
+
+    return lines.join("\n");
+  },
+  { name: "route-output-validation" },
+);
+
+export function routeOutputValidationTemplateData(
+  graph: ApplicationGraph,
+): RouteOutputValidationTemplateData[] {
+  const modelSchemas = new Set(
+    graph.nodes
+      .filter((node) => node.type === "model")
+      .map((node) => nodeName(node))
+      .filter((name): name is string => name !== undefined)
+      .map((name) => `${name}Schema`),
+  );
+  const routes = graph.nodes
+    .filter((node) => node.type === "route")
+    .map((node) => {
+      const name = nodeName(node) ?? node.id;
+      const values = node.data?.["responses"];
+      if (!Array.isArray(values)) return undefined;
+      const responses = values
+        .filter((value): value is Record<string, unknown> => Boolean(value && typeof value === "object"))
+        .map((value) => {
+          const status = value["status"];
+          if (!Number.isInteger(status) || Number(status) < 100 || Number(status) > 599) {
+            throw new RouteOutputValidationGenerationError(
+              `Invalid response status for route "${name}": "${String(status)}".`,
+            );
+          }
+          const schema = responseSchema(Number(status), value["schema"], name);
+          if (/^[A-Za-z_$][A-Za-z0-9_$]*Schema$/.test(schema) && !modelSchemas.has(schema)) {
+            throw new RouteOutputValidationGenerationError(
+              `Schema reference "${schema}" does not match a generated model schema.`,
+            );
+          }
+          return { status: Number(status), schema };
+        })
+        .sort((left, right) => left.status - right.status);
+      if (responses.length === 0) return undefined;
+      const schemaReferences = responses
+        .map((response) => response.schema)
+        .filter((schema) => /^[A-Za-z_$][A-Za-z0-9_$]*Schema$/.test(schema));
+      return { name, exportName: exportName(name), responses, schemaReferences };
+    })
+    .filter((route): route is RouteOutputValidationTemplateData => route !== undefined)
+    .sort((left, right) => left.name.localeCompare(right.name));
+
+  return routes;
+}
+
+export function generateRouteOutputValidation(graph: ApplicationGraph): GeneratedFile | undefined {
+  const data = routeOutputValidationTemplateData(graph);
+  if (data.length === 0) return undefined;
+  return {
+    path: "route-output-validation.ts",
+    content: routeOutputValidationTemplate.render(data),
+  };
+}

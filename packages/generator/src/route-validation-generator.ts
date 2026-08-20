@@ -117,7 +117,8 @@ export const routeValidationTemplate = defineTemplate<RouteValidationTemplateDat
           (parameter) =>
             `${propertyName(parameter.name)}: ${parameter.schema}${parameter.required ? "" : ".optional()"}`,
         );
-        lines.push(`  ${location}: z.object({ ${fields.join(", ")} }),`);
+        const outputLocation = location === "header" ? "headers" : location;
+        lines.push(`  ${outputLocation}: z.object({ ${fields.join(", ")} }),`);
       }
       lines.push("} as const;", "");
     }

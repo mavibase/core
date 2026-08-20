@@ -11,6 +11,7 @@ import { generateTypes } from "./type-generator.js";
 import { generateZodSchemas } from "./zod-generator.js";
 import { generateRouteValidation } from "./route-validation-generator.js";
 import { generateRouteResponses } from "./route-response-generator.js";
+import { generateRouteOutputValidation } from "./route-output-validation-generator.js";
 import { generateRouteHandlers, type HandlerFramework } from "./route-handler-generator.js";
 import { generateRouteMiddleware } from "./route-middleware-generator.js";
 import { generateApiErrors } from "./api-error-generator.js";
@@ -52,6 +53,7 @@ function structuredArtifact(artifact: GeneratedFile): GeneratedFile {
     "types.ts": "types/index.ts",
     "route-schemas.ts": "routes/schemas.ts",
     "route-responses.ts": "routes/responses.ts",
+    "route-output-validation.ts": "routes/output-validation.ts",
     "route-handlers.ts": "controllers/index.ts",
     "route-middleware.ts": "middleware/index.ts",
     "api-errors.ts": "errors/index.ts",
@@ -71,6 +73,9 @@ function structuredArtifact(artifact: GeneratedFile): GeneratedFile {
     content = content.replaceAll('from "./schemas.js"', 'from "../schemas/index.js"');
   }
   if (artifact.path === "route-responses.ts") {
+    content = content.replaceAll('from "./schemas.js"', 'from "../schemas/index.js"');
+  }
+  if (artifact.path === "route-output-validation.ts") {
     content = content.replaceAll('from "./schemas.js"', 'from "../schemas/index.js"');
   }
   if (artifact.path === "route-handlers.ts") {
@@ -141,6 +146,12 @@ export function generate(graph: ApplicationGraph, options?: GenerateOptions): Ge
     artifacts.push(routeResponsesFile);
   }
 
+  const routeOutputValidationFile = generateRouteOutputValidation(graph);
+
+  if (routeOutputValidationFile) {
+    artifacts.push(routeOutputValidationFile);
+  }
+
   const routeHandlersFile = generateRouteHandlers(graph, options?.framework);
 
   if (routeHandlersFile) {
@@ -204,6 +215,7 @@ export * from "./type-generator.js";
 export * from "./zod-generator.js";
 export * from "./route-validation-generator.js";
 export * from "./route-response-generator.js";
+export * from "./route-output-validation-generator.js";
 export * from "./route-handler-generator.js";
 export * from "./route-middleware-generator.js";
 export * from "./api-error-generator.js";

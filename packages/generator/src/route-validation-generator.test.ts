@@ -77,6 +77,43 @@ describe("route validation generator", () => {
     expect(generateRouteValidation(graph)?.content).toContain("body: UserSchema,");
   });
 
+  it("generates body, query, params, and headers validation together", () => {
+    const graph = buildGraph(
+      defineApp({
+        name: "input-validation-app",
+        version: "1.0.0",
+        environment: "development",
+        stack: { language: "typescript", runtime: "node" },
+        models: [defineModel({ name: "User" })],
+        routes: [
+          defineRoute({
+            name: "users.update",
+            method: "PATCH",
+            path: "/users/:id",
+            parameters: [
+              defineParameter({ name: "id", location: "path", type: "uuid" }),
+              defineParameter({ name: "filter", location: "query", type: "string" }),
+              defineParameter({ name: "authorization", location: "header", type: "string" }),
+              defineParameter({
+                name: "body",
+                location: "body",
+                schema: "UserSchema",
+                required: false,
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+
+    const content = generateRouteValidation(graph)?.content;
+
+    expect(content).toContain("path: z.object({ id: z.string().uuid() }),");
+    expect(content).toContain("query: z.object({ filter: z.string().optional() }),");
+    expect(content).toContain("headers: z.object({ authorization: z.string().optional() }),");
+    expect(content).toContain("body: UserSchema.optional(),");
+  });
+
   it("rejects references to schemas that are not generated", () => {
     const graph = buildGraph(
       defineApp({
