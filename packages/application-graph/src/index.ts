@@ -449,6 +449,10 @@ export function buildGraph(definition: ApplicationDefinition): ApplicationGraph 
     nodes.push(
       createNode("model", modelId, {
         name: model.name,
+        ...(model.indexes && model.indexes.length > 0 ? { indexes: model.indexes } : {}),
+        ...(model.constraints && model.constraints.length > 0
+          ? { constraints: model.constraints }
+          : {}),
       }),
     );
 

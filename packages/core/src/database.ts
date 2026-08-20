@@ -1,11 +1,24 @@
+import type { SemanticType } from "./index.js";
+
 export type DatabaseScalarType =
-  "string" | "integer" | "float" | "decimal" | "boolean" | "uuid" | "datetime" | "json";
+  | "string"
+  | "text"
+  | "integer"
+  | "float"
+  | "decimal"
+  | "boolean"
+  | "date"
+  | "uuid"
+  | "datetime"
+  | "json"
+  | "bigint";
 
 export type ReferentialAction = "cascade" | "restrict" | "set-null" | "no-action";
 
 export interface DatabaseColumnDefinition {
   name: string;
   type: DatabaseScalarType;
+  semanticType?: SemanticType;
   nullable?: boolean;
   primaryKey?: boolean;
   unique?: boolean;
@@ -85,6 +98,37 @@ export interface DatabaseSchemaDefinition {
   name: string;
   version: string;
   tables: readonly DatabaseTableDefinition[];
+}
+
+export type DatabaseMigrationOperationKind =
+  | "create-table"
+  | "drop-table"
+  | "add-column"
+  | "drop-column"
+  | "alter-column"
+  | "create-index"
+  | "drop-index"
+  | "add-constraint"
+  | "drop-constraint";
+
+export interface DatabaseMigrationOperation {
+  kind: DatabaseMigrationOperationKind;
+  table?: string;
+  name?: string;
+  data?: Readonly<Record<string, unknown>>;
+}
+
+export interface DatabaseNamingPolicy {
+  tableCase: "preserve" | "snake_case";
+  columnCase: "preserve" | "snake_case";
+  indexCase: "preserve" | "snake_case";
+  constraintCase: "preserve" | "snake_case";
+}
+
+export interface DatabaseSchemaModel extends DatabaseSchemaDefinition {
+  seeds: readonly DatabaseSeedDefinition[];
+  naming: DatabaseNamingPolicy;
+  operations: readonly DatabaseMigrationOperation[];
 }
 
 export type DatabaseSeedMode = "insert" | "upsert";
@@ -342,13 +386,16 @@ export function defineDatabaseSeed(definition: DatabaseSeedDefinition): Database
 
 const scalarTypes: readonly DatabaseScalarType[] = [
   "string",
+  "text",
   "integer",
   "float",
   "decimal",
   "boolean",
   "uuid",
+  "date",
   "datetime",
   "json",
+  "bigint",
 ];
 
 const referentialActions: readonly ReferentialAction[] = [

@@ -253,5 +253,6 @@ export * from "./route-handler-generator.js";
 export * from "./route-middleware-generator.js";
 export * from "./api-error-generator.js";
 export * from "./openapi-generator.js";
+export * from "./schema-normalizer.js";
 export * from "./generation-plan.js";
 export * from "./generation-manifest.js";

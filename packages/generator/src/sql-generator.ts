@@ -40,13 +40,16 @@ export type PostgreSQLSqlOperation =
 
 const typeMap: Readonly<Record<DatabaseColumnDefinition["type"], string>> = {
   string: "TEXT",
+  text: "TEXT",
   integer: "INTEGER",
   float: "DOUBLE PRECISION",
   decimal: "NUMERIC",
   boolean: "BOOLEAN",
   uuid: "UUID",
+  date: "DATE",
   datetime: "TIMESTAMPTZ",
   json: "JSONB",
+  bigint: "BIGINT",
 };
 
 function sqlLiteral(value: unknown, dataType: DatabaseColumnDefinition["type"]): string {
