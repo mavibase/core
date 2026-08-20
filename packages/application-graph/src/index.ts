@@ -205,6 +205,11 @@ export function buildGraph(definition: ApplicationDefinition): ApplicationGraph 
       name: definition.name,
       version: definition.version,
       environment: definition.environment,
+      ...(definition.stack.web === undefined &&
+      definition.stack.backend === undefined &&
+      definition.stack.database === undefined
+        ? {}
+        : { stack: definition.stack }),
     }),
   );
 
