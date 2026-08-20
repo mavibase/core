@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildGraph,
+  canonicalizeGraph,
   createEdge,
   createNode,
   deserializeGraph,
@@ -355,6 +356,54 @@ describe("application-graph", () => {
       const graph = buildGraph(app);
 
       expect(serializeGraph(graph)).toBe(serializeGraph(graph));
+    });
+
+    it("produces identical output for shuffled non-semantic graph ordering", () => {
+      const first = {
+        name: "my-app",
+        version: "1.0.0",
+        nodes: [
+          { id: "model:post", type: "model" as const, data: { z: 1, a: 2 } },
+          { id: "app:my-app", type: "application" as const },
+        ],
+        edges: [
+          { from: "model:post", to: "field:post:title", type: "has-field" as const },
+          { from: "app:my-app", to: "model:post", type: "contains" as const },
+        ],
+      };
+      const second = {
+        name: "my-app",
+        version: "1.0.0",
+        nodes: [
+          { id: "app:my-app", type: "application" as const },
+          { id: "model:post", type: "model" as const, data: { a: 2, z: 1 } },
+        ],
+        edges: [
+          { from: "app:my-app", to: "model:post", type: "contains" as const },
+          { from: "model:post", to: "field:post:title", type: "has-field" as const },
+        ],
+      };
+
+      expect(serializeGraph(first)).toBe(serializeGraph(second));
+    });
+
+    it("does not mutate caller-owned graph arrays or nested data", () => {
+      const graph = {
+        name: "my-app",
+        version: "1.0.0",
+        nodes: [
+          { id: "model:post", type: "model" as const, data: { z: 1, a: 2 } },
+          { id: "app:my-app", type: "application" as const },
+        ],
+        edges: [],
+      };
+      const originalNodes = [...graph.nodes];
+      const originalData = graph.nodes[0]?.data;
+
+      canonicalizeGraph(graph);
+
+      expect(graph.nodes).toEqual(originalNodes);
+      expect(graph.nodes[0]?.data).toBe(originalData);
     });
   });
 

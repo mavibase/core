@@ -101,16 +101,61 @@ export function createEdge(
   };
 }
 
+function canonicalizeValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalizeValue);
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort((left, right) => left.localeCompare(right))
+      .map((key) => [key, canonicalizeValue(value[key])]),
+  );
+}
+
+function compareGraphNodes(left: GraphNode, right: GraphNode): number {
+  return left.id.localeCompare(right.id) || left.type.localeCompare(right.type);
+}
+
+function compareGraphEdges(left: GraphEdge, right: GraphEdge): number {
+  return (
+    left.from.localeCompare(right.from) ||
+    left.to.localeCompare(right.to) ||
+    left.type.localeCompare(right.type) ||
+    JSON.stringify(left.data ?? {}).localeCompare(JSON.stringify(right.data ?? {}))
+  );
+}
+
+export function canonicalizeGraph(graph: ApplicationGraph): ApplicationGraph {
+  return {
+    name: graph.name,
+    version: graph.version,
+    nodes: graph.nodes
+      .map((node) => ({
+        id: node.id,
+        type: node.type,
+        ...(node.data === undefined
+          ? {}
+          : { data: canonicalizeValue(node.data) as Record<string, unknown> }),
+      }))
+      .sort(compareGraphNodes),
+    edges: graph.edges
+      .map((edge) => ({
+        from: edge.from,
+        to: edge.to,
+        type: edge.type,
+        ...(edge.data === undefined
+          ? {}
+          : { data: canonicalizeValue(edge.data) as Record<string, unknown> }),
+      }))
+      .sort(compareGraphEdges),
+  };
+}
+
 export function serializeGraph(graph: ApplicationGraph): string {
+  const canonicalGraph = canonicalizeGraph(graph);
   const payload: SerializedGraph = {
     format: GRAPH_FORMAT,
     schemaVersion: GRAPH_SCHEMA_VERSION,
-    graph: {
-      name: graph.name,
-      version: graph.version,
-      nodes: graph.nodes,
-      edges: graph.edges,
-    },
+    graph: canonicalGraph,
   };
 
   return JSON.stringify(payload, null, 2);
@@ -151,7 +196,7 @@ export function deserializeGraph(input: string): ApplicationGraph {
     throw new GraphValidationError(`Invalid graph: ${message}`, result.diagnostics);
   }
 
-  return result.value;
+  return canonicalizeGraph(result.value as ApplicationGraph);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -451,10 +496,10 @@ export function buildGraph(definition: ApplicationDefinition): ApplicationGraph 
     }
   }
 
-  return {
+  return canonicalizeGraph({
     name: definition.name,
     version: definition.version,
     nodes,
     edges,
-  };
+  });
 }
