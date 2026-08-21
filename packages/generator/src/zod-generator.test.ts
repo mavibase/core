@@ -133,6 +133,46 @@ describe("zod generator", () => {
     );
   });
 
+  it("renders reusable composed schemas and model references", () => {
+    const graph = buildGraph({
+      name: "composed-schema-app",
+      version: "1.0.0",
+      environment: "development",
+      stack: { language: "typescript", runtime: "node" },
+      definitions: {
+        schemas: {
+          UserSummary: {
+            kind: "object",
+            fields: {
+              profile: { kind: "reference", schema: { name: "UserProfile" } },
+              owner: { kind: "model", model: "User" },
+            },
+          },
+          UserProfile: {
+            kind: "intersection",
+            members: [
+              { kind: "object", fields: { id: { kind: "model", model: "User" } } },
+              {
+                kind: "union",
+                members: [
+                  { kind: "object", fields: { name: { kind: "model", model: "User" } } },
+                  { kind: "array", item: { kind: "model", model: "User" } },
+                ],
+              },
+            ],
+          },
+        },
+      },
+      models: [defineModel({ name: "User" })],
+    });
+
+    const content = generateZodSchemas(graph)?.content;
+    expect(content).toContain("export const UserProfileSchema = z.intersection(");
+    expect(content).toContain("z.union([z.object({ name: z.lazy(() => UserSchema) })");
+    expect(content).toContain("export const UserSummarySchema = z.object({");
+    expect(content).toContain("profile: z.lazy(() => UserProfileSchema)");
+  });
+
   it("fails clearly when a custom refinement is not configured", () => {
     const graph = buildGraph({
       name: "missing-refinement-app",

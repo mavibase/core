@@ -1,5 +1,5 @@
 import type { ApplicationGraph } from "@mavibase/application-graph";
-import type { RefinementDefinition, StructuredConstraint } from "@mavibase/core";
+import type { RefinementDefinition, SchemaExpression, StructuredConstraint } from "@mavibase/core";
 
 import type { GeneratedFile } from "./index.js";
 import { defineTemplate } from "./template.js";
@@ -10,6 +10,7 @@ import {
   type NormalizedModelFieldContext,
   type NormalizedModelRelationshipContext,
 } from "./model-context.js";
+import { renderSchemaExpression } from "./schema-expression-generator.js";
 
 export interface ZodFieldTemplateData {
   name: string;
@@ -22,7 +23,13 @@ export interface ZodModelTemplateData {
   relationships: ZodFieldTemplateData[];
 }
 
+export interface ZodSchemaTemplateData {
+  name: string;
+  schema: string;
+}
+
 export interface ZodSchemasTemplateData {
+  schemas: ZodSchemaTemplateData[];
   models: ZodModelTemplateData[];
   refinementImports: { importPath: string; exportName: string; localName: string }[];
 }
@@ -48,7 +55,7 @@ export class ZodGenerationError extends Error {
 }
 
 export const zodSchemasTemplate = defineTemplate<ZodSchemasTemplateData>(
-  ({ models, refinementImports }) => {
+  ({ schemas, models, refinementImports }) => {
     const lines = [
       'import { z } from "zod";',
       ...refinementImports.map(
@@ -63,6 +70,10 @@ export const zodSchemasTemplate = defineTemplate<ZodSchemasTemplateData>(
       ),
       "",
     ];
+
+    for (const schema of schemas) {
+      lines.push(`export const ${schema.name}Schema = ${schema.schema};`, "");
+    }
 
     for (const model of models) {
       lines.push(`export const ${model.name}Schema = z.object({`);
@@ -124,6 +135,15 @@ function refinementDefinitions(graph: ApplicationGraph): Record<string, Refineme
   const refinements = (definitions as Record<string, unknown>)["refinements"];
   if (!refinements || typeof refinements !== "object" || Array.isArray(refinements)) return {};
   return refinements as Record<string, RefinementDefinition>;
+}
+
+function schemaDefinitions(graph: ApplicationGraph): Record<string, SchemaExpression> {
+  const application = graph.nodes.find((node) => node.type === "application");
+  const definitions = application?.data?.["definitions"];
+  if (!definitions || typeof definitions !== "object" || Array.isArray(definitions)) return {};
+  const schemas = (definitions as Record<string, unknown>)["schemas"];
+  if (!schemas || typeof schemas !== "object" || Array.isArray(schemas)) return {};
+  return schemas as Record<string, SchemaExpression>;
 }
 
 function applyConstraint(
@@ -206,12 +226,23 @@ export function zodTemplateData(graph: ApplicationGraph): ZodSchemasTemplateData
   try {
     const imports = new Map<string, { importPath: string; exportName: string; localName: string }>();
     const refinements = refinementDefinitions(graph);
-    const models = normalizeModelContexts(graph).map((model) => ({
+    const modelContexts = normalizeModelContexts(graph);
+    const modelNames = new Set(modelContexts.map((model) => model.name));
+    const schemas = schemaDefinitions(graph);
+    const schemaNames = new Set(Object.keys(schemas));
+    const schemaData = Object.keys(schemas)
+      .sort((left, right) => left.localeCompare(right))
+      .map((name) => ({
+        name,
+        schema: renderSchemaExpression(schemas[name]!, { modelNames, schemaNames }),
+      }));
+    const models = modelContexts.map((model) => ({
       name: model.name,
       fields: model.fields.map((field) => fieldSchema(field, model.name, refinements, imports)),
       relationships: model.relationships.map((relationship) => relationshipSchema(relationship)),
     } satisfies ZodModelTemplateData));
     return {
+      schemas: schemaData,
       models,
       refinementImports: [...imports.values()].sort((left, right) =>
         left.localName.localeCompare(right.localName),
@@ -244,7 +275,7 @@ export function zodTemplateData(graph: ApplicationGraph): ZodSchemasTemplateData
 
 export function generateZodSchemas(graph: ApplicationGraph): GeneratedFile | undefined {
   const data = zodTemplateData(graph);
-  if (data.models.length === 0) {
+  if (data.models.length === 0 && data.schemas.length === 0) {
     return undefined;
   }
 

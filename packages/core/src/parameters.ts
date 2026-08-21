@@ -1,5 +1,6 @@
 import type { FieldType } from "./index.js";
 import { validateStructuredConstraints, type StructuredConstraint } from "./validation.js";
+import { validateSchemaExpression, type SchemaExpression } from "./schema.js";
 
 export const routeParameterLocations = ["path", "query", "header", "body"] as const;
 export type RouteParameterLocation = (typeof routeParameterLocations)[number];
@@ -9,9 +10,8 @@ export interface RouteParameterDefinition {
   location: RouteParameterLocation;
   required: boolean;
   type?: FieldType;
-  schema?: string;
+  schema?: string | SchemaExpression;
   constraints?: readonly StructuredConstraint[];
-  /** @deprecated Use constraints. */
   validation?: string;
   description?: string;
 }
@@ -21,9 +21,8 @@ export interface DefineParameterInput {
   location: RouteParameterLocation;
   required?: boolean;
   type?: FieldType;
-  schema?: string;
+  schema?: string | SchemaExpression;
   constraints?: readonly StructuredConstraint[];
-  /** @deprecated Use constraints. */
   validation?: string;
   description?: string;
 }
@@ -103,6 +102,11 @@ export function validateRouteParameters(
     if (parameter.constraints !== undefined) {
       for (const message of validateStructuredConstraints(parameter.constraints)) {
         issues.push({ path: `${path}.constraints`, message });
+      }
+    }
+    if (parameter.schema !== undefined && typeof parameter.schema !== "string") {
+      for (const message of validateSchemaExpression(parameter.schema, `${path}.schema`)) {
+        issues.push({ path: `${path}.schema`, message });
       }
     }
   }

@@ -79,6 +79,54 @@ describe("route validation generator", () => {
     expect(generateRouteValidation(graph)?.content).toContain("body: UserSchema,");
   });
 
+  it("renders composed route parameter schemas from the registry", () => {
+    const graph = buildGraph(
+      defineApp({
+        name: "composed-route-app",
+        version: "1.0.0",
+        environment: "development",
+        stack: { language: "typescript", runtime: "node" },
+        definitions: {
+          schemas: {
+            CreateUser: {
+              kind: "object",
+              fields: {
+                name: { kind: "reference", schema: { name: "UserPayload" } },
+                tags: { kind: "array", item: { kind: "reference", schema: { name: "UserPayload" } } },
+              },
+            },
+            UserPayload: {
+              kind: "union",
+              members: [
+                { kind: "object", fields: { name: { kind: "model", model: "User" } } },
+                { kind: "object", fields: { id: { kind: "model", model: "User" } } },
+              ],
+            },
+          },
+        },
+        models: [defineModel({ name: "User" })],
+        routes: [
+          defineRoute({
+            name: "users.create",
+            method: "POST",
+            path: "/users",
+            parameters: [
+              defineParameter({
+                name: "body",
+                location: "body",
+                schema: { kind: "reference", schema: { name: "CreateUser" } },
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+
+    const content = generateRouteValidation(graph)?.content;
+    expect(content).toContain('import { CreateUserSchema } from "./schemas.js";');
+    expect(content).toContain("body: z.lazy(() => CreateUserSchema).optional(),");
+  });
+
   it("generates body, query, params, and headers validation together", () => {
     const graph = buildGraph(
       defineApp({

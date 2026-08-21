@@ -1,11 +1,14 @@
 import type { ApplicationGraph, GraphNode } from "@mavibase/application-graph";
+import type { SchemaExpression } from "@mavibase/core";
 
 import type { GeneratedFile } from "./index.js";
 import { defineTemplate } from "./template.js";
+import { renderSchemaExpression } from "./schema-expression-generator.js";
 
 interface OutputResponseTemplateData {
   status: number;
   schema: string;
+  references: string[];
 }
 
 export interface RouteOutputValidationTemplateData {
@@ -48,6 +51,15 @@ function responseSchema(status: number, schema: unknown, routeName: string): str
     );
   }
   return status === 204 || status === 304 ? "z.void()" : "z.unknown()";
+}
+
+function schemaDefinitions(graph: ApplicationGraph): Record<string, SchemaExpression> {
+  const application = graph.nodes.find((node) => node.type === "application");
+  const definitions = application?.data?.["definitions"];
+  if (!definitions || typeof definitions !== "object" || Array.isArray(definitions)) return {};
+  const schemas = (definitions as Record<string, unknown>)["schemas"];
+  if (!schemas || typeof schemas !== "object" || Array.isArray(schemas)) return {};
+  return schemas as Record<string, SchemaExpression>;
 }
 
 export const routeOutputValidationTemplate = defineTemplate<RouteOutputValidationTemplateData[]>(
@@ -97,13 +109,15 @@ export const routeOutputValidationTemplate = defineTemplate<RouteOutputValidatio
 export function routeOutputValidationTemplateData(
   graph: ApplicationGraph,
 ): RouteOutputValidationTemplateData[] {
-  const modelSchemas = new Set(
+  const modelNames = new Set(
     graph.nodes
       .filter((node) => node.type === "model")
       .map((node) => nodeName(node))
       .filter((name): name is string => name !== undefined)
-      .map((name) => `${name}Schema`),
   );
+  const schemaNames = new Set(Object.keys(schemaDefinitions(graph)));
+  const modelSchemas = new Set([...modelNames].map((name) => `${name}Schema`));
+  const generatedSchemas = new Set([...modelSchemas, ...[...schemaNames].map((name) => `${name}Schema`)]);
   const routes = graph.nodes
     .filter((node) => node.type === "route")
     .map((node) => {
@@ -119,19 +133,33 @@ export function routeOutputValidationTemplateData(
               `Invalid response status for route "${name}": "${String(status)}".`,
             );
           }
-          const schema = responseSchema(Number(status), value["schema"], name);
-          if (/^[A-Za-z_$][A-Za-z0-9_$]*Schema$/.test(schema) && !modelSchemas.has(schema)) {
+          const schemaValue = value["schema"];
+          const references = new Set<string>();
+          const schema =
+            schemaValue && typeof schemaValue === "object"
+              ? renderSchemaExpression(schemaValue as SchemaExpression, {
+                  modelNames,
+                  schemaNames,
+                  modelReferences: references,
+                  schemaReferences: references,
+                })
+              : responseSchema(Number(status), schemaValue, name);
+          if (/^[A-Za-z_$][A-Za-z0-9_$]*Schema$/.test(schema) && !generatedSchemas.has(schema)) {
             throw new RouteOutputValidationGenerationError(
-              `Schema reference "${schema}" does not match a generated model schema.`,
+              `Schema reference "${schema}" does not match a generated schema.`,
             );
           }
-          return { status: Number(status), schema };
+          return { status: Number(status), schema, references: [...references] };
         })
         .sort((left, right) => left.status - right.status);
       if (responses.length === 0) return undefined;
       const schemaReferences = responses
-        .map((response) => response.schema)
-        .filter((schema) => /^[A-Za-z_$][A-Za-z0-9_$]*Schema$/.test(schema));
+        .flatMap((response) => response.references)
+        .concat(
+          responses
+            .map((response) => response.schema)
+            .filter((schema) => /^[A-Za-z_$][A-Za-z0-9_$]*Schema$/.test(schema)),
+        );
       return { name, exportName: exportName(name), responses, schemaReferences };
     })
     .filter((route): route is RouteOutputValidationTemplateData => route !== undefined)

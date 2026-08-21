@@ -1,16 +1,17 @@
-import type { RefinementDefinition, ScalarType, StructuredConstraint } from "@mavibase/core";
+import type { RefinementDefinition, ScalarType, SchemaExpression, StructuredConstraint } from "@mavibase/core";
 import { validateStructuredConstraints } from "@mavibase/core";
 import type { ApplicationGraph, GraphNode } from "@mavibase/application-graph";
 
 import type { GeneratedFile } from "./index.js";
 import { defineTemplate } from "./template.js";
+import { renderSchemaExpression } from "./schema-expression-generator.js";
 
 type ParameterLocation = "path" | "query" | "header" | "body";
 
 interface RouteValidationParameter {
   name: string;
   location: ParameterLocation;
-  schema: string;
+  schema: string | SchemaExpression;
   constraints: readonly StructuredConstraint[];
   required: boolean;
 }
@@ -60,6 +61,15 @@ function refinementDefinitions(graph: ApplicationGraph): Record<string, Refineme
   const refinements = (definitions as Record<string, unknown>)["refinements"];
   if (!refinements || typeof refinements !== "object" || Array.isArray(refinements)) return {};
   return refinements as Record<string, RefinementDefinition>;
+}
+
+function schemaDefinitions(graph: ApplicationGraph): Record<string, SchemaExpression> {
+  const application = graph.nodes.find((node) => node.type === "application");
+  const definitions = application?.data?.["definitions"];
+  if (!definitions || typeof definitions !== "object" || Array.isArray(definitions)) return {};
+  const schemas = (definitions as Record<string, unknown>)["schemas"];
+  if (!schemas || typeof schemas !== "object" || Array.isArray(schemas)) return {};
+  return schemas as Record<string, SchemaExpression>;
 }
 
 function applyConstraint(
@@ -255,6 +265,14 @@ export const routeValidationTemplate = defineTemplate<RouteValidationTemplateDat
 export function routeValidationTemplateData(graph: ApplicationGraph): RouteValidationTemplateData {
   const imports = new Map<string, { importPath: string; exportName: string; localName: string }>();
   const refinements = refinementDefinitions(graph);
+  const modelNames = new Set(
+    graph.nodes
+      .filter((node) => node.type === "model")
+      .map((node) => nodeName(node))
+      .filter((name): name is string => name !== undefined),
+  );
+  const schemaNames = new Set(Object.keys(schemaDefinitions(graph)));
+  const schemaExpressionReferences = new Set<string>();
   const routes = graph.nodes
     .filter((node) => node.type === "route")
     .map((node) => {
@@ -263,7 +281,14 @@ export function routeValidationTemplateData(graph: ApplicationGraph): RouteValid
         ...parameter,
         schema: parameter.constraints.reduce(
           (expression, constraint) => applyConstraint(expression, constraint, refinements, imports),
-          parameter.schema,
+          typeof parameter.schema === "string"
+            ? parameter.schema
+            : renderSchemaExpression(parameter.schema, {
+                modelNames,
+                schemaNames,
+                modelReferences: schemaExpressionReferences,
+                schemaReferences: schemaExpressionReferences,
+              }),
         ),
       }));
       return { name, schemaName: schemaName(name), parameters };
@@ -276,15 +301,11 @@ export function routeValidationTemplateData(graph: ApplicationGraph): RouteValid
         .map((parameter) => parameter.schema)
         .filter((schema) => /^[A-Za-z_$][A-Za-z0-9_$]*Schema$/.test(schema)),
     ),
+    ...schemaExpressionReferences,
   ].sort((left, right) => left.localeCompare(right));
-  const modelSchemas = new Set(
-    graph.nodes
-      .filter((node) => node.type === "model")
-      .map((node) => nodeName(node))
-      .filter((name): name is string => name !== undefined)
-      .map((name) => `${name}Schema`),
-  );
-  const missingSchema = schemaReferences.find((reference) => !modelSchemas.has(reference));
+  const modelSchemas = new Set([...modelNames].map((name) => `${name}Schema`));
+  const generatedSchemas = new Set([...modelSchemas, ...[...schemaNames].map((name) => `${name}Schema`)]);
+  const missingSchema = schemaReferences.find((reference) => !generatedSchemas.has(reference));
   if (missingSchema) {
     throw new RouteValidationGenerationError(
       `Schema reference "${missingSchema}" does not match a generated model schema.`,

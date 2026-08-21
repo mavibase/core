@@ -23,6 +23,8 @@ export * from "./diagnostics.js";
 
 import type { StructuredConstraint } from "./validation.js";
 import { validateStructuredConstraints } from "./validation.js";
+import type { SchemaExpression } from "./schema.js";
+import { validateSchemaExpression } from "./schema.js";
 
 export const version = "0.1.0";
 
@@ -31,6 +33,7 @@ export * from "./parameters.js";
 export * from "./responses.js";
 export * from "./middleware.js";
 export * from "./validation.js";
+export * from "./schema.js";
 
 export * from "./database.js";
 
@@ -74,7 +77,9 @@ export interface StackConfig {
 }
 
 export interface DefinitionsRegistry {
-  [name: string]: Record<string, unknown>;
+  schemas?: Record<string, SchemaExpression>;
+  refinements?: Record<string, import("./validation.js").RefinementDefinition>;
+  [name: string]: unknown;
 }
 
 /** Mavibase field types */
@@ -142,7 +147,6 @@ export interface FieldDefinition {
   type: SemanticType;
   modifiers?: FieldModifiers;
   constraints?: readonly StructuredConstraint[];
-  /** @deprecated Use constraints. */
   validation?: string;
 }
 
@@ -639,6 +643,17 @@ export function validateDefinition(definition: unknown): ValidationIssue[] {
       path: "definitions",
       message: "Application definitions registry must be an object.",
     });
+  } else if (isRecord(definitions) && definitions["schemas"] !== undefined) {
+    const schemas = definitions["schemas"];
+    if (!isRecord(schemas)) {
+      issues.push({ path: "definitions.schemas", message: "Schema registry must be an object." });
+    } else {
+      for (const name of Object.keys(schemas).sort((left, right) => left.localeCompare(right))) {
+        for (const message of validateSchemaExpression(schemas[name], `definitions.schemas.${name}`)) {
+          issues.push({ path: `definitions.schemas.${name}`, message });
+        }
+      }
+    }
   }
 
   const rawModels = candidate["models"];
@@ -743,7 +758,9 @@ export function validateDefinition(definition: unknown): ValidationIssue[] {
         const schema = responseObj["schema"];
         if (
           schema !== undefined &&
-          (typeof schema !== "string" || !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(schema))
+          (typeof schema === "string"
+            ? !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(schema)
+            : validateSchemaExpression(schema, `routes.${String(routeName)}.responses[${index}].schema`).length > 0)
         ) {
           issues.push({
             path: `routes.${String(routeName)}.responses[${index}].schema`,

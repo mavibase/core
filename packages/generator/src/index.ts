@@ -288,6 +288,7 @@ export * from "./zod-generator.js";
 export * from "./route-validation-generator.js";
 export * from "./route-response-generator.js";
 export * from "./route-output-validation-generator.js";
+export * from "./schema-expression-generator.js";
 export * from "./route-handler-generator.js";
 export * from "./route-registration-generator.js";
 export * from "./route-middleware-generator.js";
