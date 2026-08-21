@@ -30,6 +30,10 @@ describe("model test generator", () => {
     expect(first).toEqual(second);
     expect(first?.path).toBe("model-tests.ts");
     expect(first?.content).toContain('import { UserSchema } from "./schemas.js";');
+    expect(first?.content).toContain("run(): void {");
+    expect(first?.content).toContain("UserSchema.safeParse");
+    expect(first?.content).toContain("export function runGeneratedModelTests(): void");
+    expect(first?.content).toContain('import { UserRelationships } from "./relationships.js";');
     expect(first?.content).toContain("export const UserModelTests = {");
     expect(first?.content).toContain('requiredFields: ["email"] as const');
     expect(first?.content).toContain('optionalFields: ["nickname"] as const');
