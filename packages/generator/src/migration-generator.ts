@@ -1,9 +1,10 @@
 import type {
+  DatabaseColumnDefinition,
   DatabaseConstraintDefinition,
+  DatabaseMigrationOperation,
   DatabaseSchemaDefinition,
   DatabaseTableDefinition,
 } from "@mavibase/core";
-import { defineDatabaseSchema } from "@mavibase/core";
 
 import type { GeneratedFile } from "./index.js";
 import {
@@ -11,6 +12,7 @@ import {
   type PostgreSQLAlterTableAction,
   type PostgreSQLSqlOperation,
 } from "./sql-generator.js";
+import { diffSchemas, SchemaDiffError } from "./schema-diff.js";
 
 export interface PostgreSQLMigrationOptions {
   name?: string;
@@ -46,116 +48,65 @@ function equalValues(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function withoutForeignKeys(table: DatabaseTableDefinition): DatabaseTableDefinition {
-  return {
-    ...table,
-    ...(table.constraints
-      ? { constraints: table.constraints.filter((constraint) => constraint.type !== "foreign-key") }
-      : {}),
-  };
-}
-
-function constraintOperation(
-  table: string,
-  constraint: DatabaseConstraintDefinition,
-): PostgreSQLSqlOperation {
-  return constraint.type === "foreign-key"
-    ? { type: "add-foreign-key", table, constraint }
-    : { type: "add-constraint", table, constraint };
-}
-
-function columnChanges(
-  previous: DatabaseTableDefinition,
-  current: DatabaseTableDefinition,
-  destructiveOperations: string[],
-): PostgreSQLAlterTableAction[] {
+function toPostgreSQLOperation(operation: DatabaseMigrationOperation): PostgreSQLSqlOperation {
+  const data = operation.data ?? {};
+  if (operation.kind === "create-table") {
+    return { type: "create-table", table: data["table"] as DatabaseTableDefinition };
+  }
+  if (operation.kind === "drop-table") return { type: "drop-table", table: operation.table ?? "" };
+  if (operation.kind === "create-index") {
+    return {
+      type: "create-index",
+      table: operation.table ?? "",
+      index: data["index"] as NonNullable<DatabaseTableDefinition["indexes"]>[number],
+    };
+  }
+  if (operation.kind === "drop-index") {
+    const index = data["index"] as NonNullable<DatabaseTableDefinition["indexes"]>[number];
+    return { type: "drop-index", table: operation.table ?? "", index: index.name };
+  }
+  if (operation.kind === "add-constraint") {
+    const constraint = data["constraint"] as DatabaseConstraintDefinition;
+    return constraint.type === "foreign-key"
+      ? { type: "add-foreign-key", table: operation.table ?? "", constraint }
+      : { type: "add-constraint", table: operation.table ?? "", constraint };
+  }
+  if (operation.kind === "drop-constraint") {
+    const constraint = data["constraint"] as DatabaseConstraintDefinition;
+    return { type: "drop-constraint", table: operation.table ?? "", constraint: constraint.name };
+  }
+  if (operation.kind === "add-column") {
+    return {
+      type: "alter-table",
+      table: operation.table ?? "",
+      actions: [{ type: "add-column", column: data["column"] as DatabaseColumnDefinition }],
+    };
+  }
+  if (operation.kind === "drop-column") {
+    const column = data["column"] as DatabaseColumnDefinition;
+    return {
+      type: "alter-table",
+      table: operation.table ?? "",
+      actions: [{ type: "drop-column", column: column.name }],
+    };
+  }
+  const previous = data["previous"] as DatabaseColumnDefinition;
+  const current = data["current"] as DatabaseColumnDefinition;
   const actions: PostgreSQLAlterTableAction[] = [];
-  const previousColumns = new Map(previous.columns.map((column) => [column.name, column]));
-  const currentColumns = new Map(current.columns.map((column) => [column.name, column]));
-
-  for (const column of current.columns) {
-    const oldColumn = previousColumns.get(column.name);
-    if (!oldColumn) {
-      actions.push({ type: "add-column", column });
-      continue;
-    }
-    if (oldColumn.type !== column.type) {
-      actions.push({ type: "alter-column-type", column: column.name, dataType: column.type });
-      destructiveOperations.push(`Change type of ${current.name}.${column.name}`);
-    }
-    if ((oldColumn.nullable ?? true) !== (column.nullable ?? true)) {
-      actions.push({
-        type: "set-nullable",
-        column: column.name,
-        nullable: column.nullable ?? true,
-      });
-    }
-    if (!equalValues(oldColumn.defaultValue, column.defaultValue)) {
-      if (column.defaultValue === undefined)
-        actions.push({ type: "drop-default", column: column.name });
-      else
-        actions.push({
-          type: "set-default",
-          column: column.name,
-          value: column.defaultValue,
-          dataType: column.type,
-        });
-    }
+  if (previous.type !== current.type) {
+    actions.push({ type: "alter-column-type", column: current.name, dataType: current.type });
   }
-
-  for (const column of previous.columns) {
-    if (!currentColumns.has(column.name)) {
-      actions.push({ type: "drop-column", column: column.name });
-      destructiveOperations.push(`Drop column ${previous.name}.${column.name}`);
-    }
+  if ((previous.nullable ?? true) !== (current.nullable ?? true)) {
+    actions.push({ type: "set-nullable", column: current.name, nullable: current.nullable ?? true });
   }
-  return actions;
-}
-
-function compareTable(
-  previous: DatabaseTableDefinition,
-  current: DatabaseTableDefinition,
-  destructiveOperations: string[],
-): PostgreSQLSqlOperation[] {
-  const operations: PostgreSQLSqlOperation[] = [];
-  const actions = columnChanges(previous, current, destructiveOperations);
-  if (actions.length > 0) operations.push({ type: "alter-table", table: current.name, actions });
-
-  const previousConstraints = new Map(
-    (previous.constraints ?? []).map((constraint) => [constraint.name, constraint]),
-  );
-  const currentConstraints = new Map(
-    (current.constraints ?? []).map((constraint) => [constraint.name, constraint]),
-  );
-  for (const constraint of previous.constraints ?? []) {
-    const next = currentConstraints.get(constraint.name);
-    if (!next || !equalValues(constraint, next)) {
-      operations.push({
-        type: "drop-constraint",
-        table: current.name,
-        constraint: constraint.name,
-      });
-    }
+  if (!equalValues(previous.defaultValue, current.defaultValue)) {
+    actions.push(
+      current.defaultValue === undefined
+        ? { type: "drop-default", column: current.name }
+        : { type: "set-default", column: current.name, value: current.defaultValue, dataType: current.type },
+    );
   }
-  for (const constraint of current.constraints ?? []) {
-    const old = previousConstraints.get(constraint.name);
-    if (!old || !equalValues(old, constraint))
-      operations.push(constraintOperation(current.name, constraint));
-  }
-
-  const previousIndexes = new Map((previous.indexes ?? []).map((index) => [index.name, index]));
-  const currentIndexes = new Map((current.indexes ?? []).map((index) => [index.name, index]));
-  for (const index of previous.indexes ?? []) {
-    const next = currentIndexes.get(index.name);
-    if (!next || !equalValues(index, next))
-      operations.push({ type: "drop-index", table: current.name, index: index.name });
-  }
-  for (const index of current.indexes ?? []) {
-    const old = previousIndexes.get(index.name);
-    if (!old || !equalValues(old, index))
-      operations.push({ type: "create-index", table: current.name, index });
-  }
-  return operations;
+  return { type: "alter-table", table: operation.table ?? "", actions };
 }
 
 export function planPostgreSQLMigration(
@@ -163,54 +114,20 @@ export function planPostgreSQLMigration(
   currentDefinition: DatabaseSchemaDefinition,
   options: PostgreSQLMigrationOptions = {},
 ): PostgreSQLMigrationPlan {
-  const previous = defineDatabaseSchema(previousDefinition);
-  const current = defineDatabaseSchema(currentDefinition);
-  const operations: PostgreSQLSqlOperation[] = [];
-  const deferredForeignKeys: PostgreSQLSqlOperation[] = [];
-  const destructiveOperations: string[] = [];
-  const previousTables = new Map(previous.tables.map((table) => [table.name, table]));
-  const currentTables = new Map(current.tables.map((table) => [table.name, table]));
-
-  for (const table of current.tables) {
-    if (!previousTables.has(table.name)) {
-      operations.push({ type: "create-table", table: withoutForeignKeys(table) });
-      for (const constraint of table.constraints ?? []) {
-        if (constraint.type === "foreign-key")
-          deferredForeignKeys.push(constraintOperation(table.name, constraint));
-      }
-      for (const index of table.indexes ?? [])
-        operations.push({ type: "create-index", table: table.name, index });
-    } else {
-      operations.push(
-        ...compareTable(previousTables.get(table.name)!, table, destructiveOperations),
-      );
+  try {
+    const plan = diffSchemas(previousDefinition, currentDefinition, options);
+    return {
+      previousVersion: plan.previousVersion,
+      currentVersion: plan.currentVersion,
+      operations: plan.operations.map(toPostgreSQLOperation),
+      destructiveOperations: plan.destructiveOperations,
+    };
+  } catch (error) {
+    if (error instanceof SchemaDiffError) {
+      throw new PostgreSQLMigrationError(error.issues);
     }
+    throw error;
   }
-
-  operations.push(...deferredForeignKeys);
-
-  for (const table of previous.tables) {
-    if (!currentTables.has(table.name)) {
-      operations.push({ type: "drop-table", table: table.name });
-      destructiveOperations.push(`Drop table ${table.name}`);
-    }
-  }
-
-  if (destructiveOperations.length > 0 && !options.allowDestructive) {
-    throw new PostgreSQLMigrationError(
-      destructiveOperations.map((operation) => ({
-        path: "migration",
-        message: `Destructive operation requires allowDestructive: true: ${operation}.`,
-      })),
-    );
-  }
-
-  return {
-    previousVersion: previous.version,
-    currentVersion: current.version,
-    operations,
-    destructiveOperations,
-  };
 }
 
 function migrationName(version: string, name: string | undefined): string {
