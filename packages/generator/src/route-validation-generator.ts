@@ -109,6 +109,7 @@ export const routeValidationTemplate = defineTemplate<RouteValidationTemplateDat
   ({ routes, schemaReferences }) => {
     const lines = [
       'import { z } from "zod";',
+      'import { createApiError } from "./api-errors.js";',
       ...schemaReferences.map((reference) => `import { ${reference} } from "./schemas.js";`),
       "",
     ];
@@ -132,6 +133,41 @@ export const routeValidationTemplate = defineTemplate<RouteValidationTemplateDat
         lines.push(`  ${outputLocation}: z.object({ ${fields.join(", ")} }),`);
       }
       lines.push("} as const;", "");
+      const parserName = schemaName(route.name).replace(/Schema$/, "");
+      const pathExpression = route.parameters.some((parameter) => parameter.location === "path")
+        ? route.schemaName + ".path.parse(input.params) as Record<string, unknown>"
+        : "input.params as Record<string, unknown>";
+      const queryExpression = route.parameters.some((parameter) => parameter.location === "query")
+        ? route.schemaName + ".query.parse(input.query) as Record<string, unknown>"
+        : "input.query as Record<string, unknown>";
+      const headersExpression = route.parameters.some((parameter) => parameter.location === "header")
+        ? route.schemaName + ".headers.parse(input.headers) as Record<string, unknown>"
+        : "input.headers as Record<string, unknown>";
+      const bodyExpression = route.parameters.some((parameter) => parameter.location === "body")
+        ? route.schemaName + ".body.parse(input.body)"
+        : "input.body";
+      lines.push(
+        "export function parse" +
+          parserName +
+          "(input: { params: unknown; query: unknown; headers: unknown; body: unknown }): { params: Record<string, unknown>; query: Record<string, unknown>; headers: Record<string, unknown>; body: unknown } {",
+        "  try {",
+        "    return {",
+        "      params: " + pathExpression + ",",
+        "      query: " + queryExpression + ",",
+        "      headers: " + headersExpression + ",",
+        "      body: " + bodyExpression + ",",
+        "    };",
+        "  } catch (error) {",
+        "    if (error instanceof z.ZodError) {",
+        "      throw createApiError(400, \"VALIDATION_ERROR\", \"Request validation failed.\", { route: " +
+          JSON.stringify(route.name) +
+          ", issues: error.issues });",
+        "    }",
+        "    throw error;",
+        "  }",
+        "}",
+        "",
+      );
     }
     return lines.join("\n");
   },

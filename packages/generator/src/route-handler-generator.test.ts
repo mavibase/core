@@ -51,9 +51,9 @@ describe("route handler generator", () => {
       (candidate) => candidate.path === "route-handlers.ts",
     );
 
-    expect(artifact?.content).toContain("response.status(201).json(result);");
+    expect(artifact?.content).toContain("response.status(201).json(parseUsersCreateResponse(201, result));");
     expect(artifact?.content).toContain(
-      "params: request.params as Record<string, unknown>, query: request.query as Record<string, unknown>",
+      'import { parseUsersCreateRequest } from "./route-schemas.js";',
     );
   });
 

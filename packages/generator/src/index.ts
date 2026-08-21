@@ -96,8 +96,19 @@ function structuredArtifact(artifact: GeneratedFile): GeneratedFile {
   if (artifact.path === "route-output-validation.ts") {
     content = content.replaceAll('from "./schemas.js"', 'from "../schemas/index.js"');
   }
+  if (artifact.path === "route-schemas.ts") {
+    content = content.replaceAll('from "./api-errors.js"', 'from "../errors/index.js"');
+  }
+  if (artifact.path === "route-output-validation.ts") {
+    content = content.replaceAll('from "./api-errors.js"', 'from "../errors/index.js"');
+  }
   if (artifact.path === "route-handlers.ts") {
     content = content.replaceAll('from "./api-errors.js"', 'from "../errors/index.js"');
+    content = content.replaceAll('from "./route-schemas.js"', 'from "../routes/schemas.js"');
+    content = content.replaceAll(
+      'from "./route-output-validation.js"',
+      'from "../routes/output-validation.js"',
+    );
   }
   if (artifact.path === "route-registration.ts") {
     content = content.replaceAll('from "./route-handlers.js"', 'from "../controllers/index.js"');

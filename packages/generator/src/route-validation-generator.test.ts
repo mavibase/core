@@ -42,6 +42,8 @@ describe("route validation generator", () => {
     expect(first?.content).toContain("export const UsersGetRequestSchema = {");
     expect(first?.content).toContain("path: z.object({ id: z.string().uuid() }),");
     expect(first?.content).toContain("query: z.object({ limit: z.number().int().optional() }),");
+    expect(first?.content).toContain("export function parseUsersGetRequest");
+    expect(first?.content).toContain('createApiError(400, "VALIDATION_ERROR"');
     expect(routeValidationTemplateData(graph).routes).toHaveLength(2);
   });
 
@@ -112,6 +114,8 @@ describe("route validation generator", () => {
     expect(content).toContain("query: z.object({ filter: z.string().optional() }),");
     expect(content).toContain("headers: z.object({ authorization: z.string().optional() }),");
     expect(content).toContain("body: UserSchema.optional(),");
+    expect(content).toContain("parseUsersUpdateRequest");
+    expect(content).toContain("UsersUpdateRequestSchema.body.parse(input.body)");
   });
 
   it("uses custom input validation and reusable schema references", () => {

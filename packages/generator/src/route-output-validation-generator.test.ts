@@ -41,6 +41,8 @@ describe("route output validation generator", () => {
     expect(first?.content).toContain("export const UsersGetResponseSchemas = {");
     expect(first?.content).toContain("200: UserSchema,");
     expect(first?.content).toContain("204: z.void(),");
+    expect(first?.content).toContain("export function parseUsersGetResponse");
+    expect(first?.content).toContain('createApiError(500, "OUTPUT_VALIDATION_ERROR"');
     expect(routeOutputValidationTemplateData(graph)[0]?.responses).toHaveLength(2);
   });
 

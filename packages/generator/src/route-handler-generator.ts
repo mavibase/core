@@ -11,6 +11,9 @@ interface RouteHandlerData {
   handlerName: string;
   dependenciesName: string;
   inputName: string;
+  requestParserName: string;
+  outputParserName: string;
+  hasOutputValidation: boolean;
   method: string;
   path: string;
   responseStatus: number;
@@ -79,14 +82,25 @@ function routeData(graph: ApplicationGraph): RouteHandlerData[] {
     .filter((node) => node.type === "route")
     .map((node) => {
       const name = nodeValue(node, "name") ?? node.id;
+      const status = responseStatus(node);
+      const responses = node.data?.["responses"];
       return {
         name,
         handlerName: handlerName(name),
         dependenciesName: symbolName(name, "Dependencies"),
         inputName: symbolName(name, "Input"),
+        requestParserName: symbolName(name, "Request"),
+        outputParserName: symbolName(name, "Response"),
+        hasOutputValidation:
+          Array.isArray(responses) &&
+          responses.some(
+            (response) =>
+              Boolean(response && typeof response === "object") &&
+              (response as Record<string, unknown>)["status"] === status,
+          ),
         method: nodeValue(node, "method") ?? "GET",
         path: nodeValue(node, "path") ?? "/",
-        responseStatus: responseStatus(node),
+        responseStatus: status,
       };
     })
     .sort((left, right) => left.name.localeCompare(right.name));
@@ -129,8 +143,31 @@ function inputAndDependencies(lines: string[], route: RouteHandlerData): void {
   );
 }
 
+function validationImports(data: RouteHandlerTemplateData): string[] {
+  return data.routes.flatMap((route) => [
+    "import { parse" + route.requestParserName + " } from \"./route-schemas.js\";",
+    ...(route.hasOutputValidation
+      ? [
+          "import { parse" +
+            route.outputParserName +
+            " } from \"./route-output-validation.js\";",
+        ]
+      : []),
+  ]);
+}
+
+function outputExpression(route: RouteHandlerData): string {
+  return route.hasOutputValidation
+    ? "parse" + route.outputParserName + "(" + route.responseStatus + ", result)"
+    : "result";
+}
+
 function expressTemplate(data: RouteHandlerTemplateData): string {
-  const lines = ['import type { NextFunction, Request, Response } from "express";', ""];
+  const lines = [
+    'import type { NextFunction, Request, Response } from "express";',
+    ...validationImports(data),
+    "",
+  ];
   commonTypes(lines);
   for (const route of data.routes) {
     inputAndDependencies(lines, route);
@@ -138,8 +175,9 @@ function expressTemplate(data: RouteHandlerTemplateData): string {
       "export function create" + route.handlerName + "(deps: " + route.dependenciesName + ") {",
       "  return async function " + route.handlerName + "(request: Request, response: Response, next: NextFunction): Promise<void> {",
       "    try {",
-      "      const result = await deps.execute({ params: request.params as Record<string, unknown>, query: request.query as Record<string, unknown>, headers: request.headers as Record<string, unknown>, body: request.body }, { request, response });",
-      "      response.status(" + route.responseStatus + ").json(result);",
+      "      const input = parse" + route.requestParserName + "({ params: request.params, query: request.query, headers: request.headers, body: request.body });",
+      "      const result = await deps.execute(input, { request, response });",
+      "      response.status(" + route.responseStatus + ").json(" + outputExpression(route) + ");",
       "    } catch (error) {",
       "      next(error);",
       "    }",
@@ -153,15 +191,20 @@ function expressTemplate(data: RouteHandlerTemplateData): string {
 }
 
 function fastifyTemplate(data: RouteHandlerTemplateData): string {
-  const lines = ['import type { FastifyReply, FastifyRequest } from "fastify";', ""];
+  const lines = [
+    'import type { FastifyReply, FastifyRequest } from "fastify";',
+    ...validationImports(data),
+    "",
+  ];
   commonTypes(lines);
   for (const route of data.routes) {
     inputAndDependencies(lines, route);
     lines.push(
       "export function create" + route.handlerName + "(deps: " + route.dependenciesName + ") {",
       "  return async function " + route.handlerName + "(request: FastifyRequest, reply: FastifyReply): Promise<void> {",
-      "    const result = await deps.execute({ params: request.params as Record<string, unknown>, query: request.query as Record<string, unknown>, headers: request.headers as Record<string, unknown>, body: request.body }, { request, response: reply });",
-      "    await reply.code(" + route.responseStatus + ").send(result);",
+      "    const input = parse" + route.requestParserName + "({ params: request.params, query: request.query, headers: request.headers, body: request.body });",
+      "    const result = await deps.execute(input, { request, response: reply });",
+      "    await reply.code(" + route.responseStatus + ").send(" + outputExpression(route) + ");",
       "  };",
       "}",
       "",
@@ -172,15 +215,20 @@ function fastifyTemplate(data: RouteHandlerTemplateData): string {
 }
 
 function honoTemplate(data: RouteHandlerTemplateData): string {
-  const lines = ['import type { Context } from "hono";', ""];
+  const lines = [
+    'import type { Context } from "hono";',
+    ...validationImports(data),
+    "",
+  ];
   commonTypes(lines);
   for (const route of data.routes) {
     inputAndDependencies(lines, route);
     lines.push(
       "export function create" + route.handlerName + "(deps: " + route.dependenciesName + ") {",
       "  return async function " + route.handlerName + "(context: Context): Promise<Response> {",
-      "    const result = await deps.execute({ params: context.req.param(), query: context.req.query(), headers: context.req.header(), body: await context.req.json().catch(() => undefined) }, { request: context.req.raw, response: context });",
-      "    return context.json(result, " + route.responseStatus + ");",
+      "    const input = parse" + route.requestParserName + "({ params: context.req.param(), query: context.req.query(), headers: context.req.header(), body: await context.req.json().catch(() => undefined) });",
+      "    const result = await deps.execute(input, { request: context.req.raw, response: context });",
+      "    return context.json(" + outputExpression(route) + ", " + route.responseStatus + ");",
       "  };",
       "}",
       "",

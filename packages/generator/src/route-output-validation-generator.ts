@@ -57,6 +57,7 @@ export const routeOutputValidationTemplate = defineTemplate<RouteOutputValidatio
     ].sort((left, right) => left.localeCompare(right));
     const lines = [
       'import { z } from "zod";',
+      'import { createApiError } from "./api-errors.js";',
       ...references.map((reference) => `import { ${reference} } from "./schemas.js";`),
       "",
     ];
@@ -67,6 +68,25 @@ export const routeOutputValidationTemplate = defineTemplate<RouteOutputValidatio
         lines.push(`  ${response.status}: ${response.schema},`);
       }
       lines.push("} as const;", "");
+      lines.push(
+        "export function parse" +
+          route.exportName.replace(/Schemas$/, "") +
+          "(status: number, value: unknown): unknown {",
+        "  try {",
+        "    const schema = " + route.exportName + "[status as keyof typeof " + route.exportName + "];",
+        "    if (!schema) throw new Error(\"Unsupported response status: \" + status);",
+        "    return schema.parse(value);",
+        "  } catch (error) {",
+        "    if (error instanceof z.ZodError) {",
+        "      throw createApiError(500, \"OUTPUT_VALIDATION_ERROR\", \"Response validation failed.\", { route: " +
+          JSON.stringify(route.name) +
+          ", status, issues: error.issues });",
+        "    }",
+        "    throw error;",
+        "  }",
+        "}",
+        "",
+      );
     }
 
     return lines.join("\n");
