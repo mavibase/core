@@ -51,6 +51,7 @@ describe("field context", () => {
       value: {
         name: "statuses",
         semanticType: { kind: "array", element: { kind: "enum", values: ["draft", "published"] } },
+        constraints: [],
         typescriptType: 'Array<"draft" | "published">',
         zodExpression: 'z.array(z.enum(["draft","published"]))',
         postgresType: "TEXT[]",
@@ -74,6 +75,28 @@ describe("field context", () => {
       "field.type.invalid",
       "field.modifiers.conflict",
     ]);
+  });
+
+  it("accepts structured constraints and rejects unsupported legacy expressions", () => {
+    const structured = generatorFieldContext(
+      {
+        type: "string",
+        constraints: [{ kind: "minLength", value: 3 }, { kind: "email" }],
+      },
+      "models.User.fields.email",
+    );
+    expect(structured.valid).toBe(true);
+    expect(structured.value?.constraints).toEqual([
+      { kind: "minLength", value: 3 },
+      { kind: "email" },
+    ]);
+
+    const unsupported = generatorFieldContext(
+      { type: "string", validation: "z.string().transform(custom)" },
+      "models.User.fields.email",
+    );
+    expect(unsupported.valid).toBe(false);
+    expect(unsupported.diagnostics[0]?.code).toBe("field.validation.unsupported");
   });
 
   it("creates serializable enum and array fields", () => {

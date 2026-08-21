@@ -1,4 +1,5 @@
 import type { ApplicationGraph } from "@mavibase/application-graph";
+import type { RefinementDefinition, StructuredConstraint } from "@mavibase/core";
 
 import type { GeneratedFile } from "./index.js";
 import { defineTemplate } from "./template.js";
@@ -23,6 +24,7 @@ export interface ZodModelTemplateData {
 
 export interface ZodSchemasTemplateData {
   models: ZodModelTemplateData[];
+  refinementImports: { importPath: string; exportName: string; localName: string }[];
 }
 
 export interface ZodGenerationErrorDetails {
@@ -46,8 +48,21 @@ export class ZodGenerationError extends Error {
 }
 
 export const zodSchemasTemplate = defineTemplate<ZodSchemasTemplateData>(
-  ({ models }) => {
-    const lines = ['import { z } from "zod";', ""];
+  ({ models, refinementImports }) => {
+    const lines = [
+      'import { z } from "zod";',
+      ...refinementImports.map(
+        (refinement) =>
+          "import { " +
+          refinement.exportName +
+          " as " +
+          refinement.localName +
+          " } from " +
+          JSON.stringify(refinement.importPath) +
+          ";",
+      ),
+      "",
+    ];
 
     for (const model of models) {
       lines.push(`export const ${model.name}Schema = z.object({`);
@@ -102,8 +117,65 @@ function defaultLiteral(value: unknown, path: string): string {
   }
 }
 
-function fieldSchema(field: NormalizedModelFieldContext, modelName: string): ZodFieldTemplateData {
+function refinementDefinitions(graph: ApplicationGraph): Record<string, RefinementDefinition> {
+  const application = graph.nodes.find((node) => node.type === "application");
+  const definitions = application?.data?.["definitions"];
+  if (!definitions || typeof definitions !== "object" || Array.isArray(definitions)) return {};
+  const refinements = (definitions as Record<string, unknown>)["refinements"];
+  if (!refinements || typeof refinements !== "object" || Array.isArray(refinements)) return {};
+  return refinements as Record<string, RefinementDefinition>;
+}
+
+function applyConstraint(
+  expression: string,
+  constraint: StructuredConstraint,
+  refinements: Record<string, RefinementDefinition>,
+  imports: Map<string, { importPath: string; exportName: string; localName: string }>,
+): string {
+  if (constraint.kind === "minLength") return expression + ".min(" + constraint.value + ")";
+  if (constraint.kind === "maxLength") return expression + ".max(" + constraint.value + ")";
+  if (constraint.kind === "pattern") {
+    return expression + ".regex(new RegExp(" + JSON.stringify(constraint.value) + "))";
+  }
+  if (constraint.kind === "min") return expression + ".min(" + constraint.value + ")";
+  if (constraint.kind === "max") return expression + ".max(" + constraint.value + ")";
+  if (constraint.kind === "email") return expression + ".email()";
+  const definition = refinements[constraint.id];
+  if (
+    !definition ||
+    typeof definition.importPath !== "string" ||
+    !definition.importPath.startsWith(".") ||
+    typeof definition.exportName !== "string"
+  ) {
+    throw new ZodGenerationError({
+      path: "validation.refinements." + constraint.id,
+      reason: "custom refinement reference cannot be resolved",
+      recommendation: "Configure an importPath and exportName for the refinement.",
+    });
+  }
+  if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(definition.exportName)) {
+    throw new ZodGenerationError({
+      path: "validation.refinements." + constraint.id,
+      reason: "custom refinement exportName is not a valid identifier",
+      recommendation: "Use a named developer-owned export.",
+    });
+  }
+  const localName = "refine_" + constraint.id.replace(/[^A-Za-z0-9_$]/g, "_");
+  imports.set(constraint.id, { importPath: definition.importPath, exportName: definition.exportName, localName });
+  return expression + ".refine(" + localName + ")";
+}
+
+function fieldSchema(
+  field: NormalizedModelFieldContext,
+  modelName: string,
+  refinements: Record<string, RefinementDefinition>,
+  imports: Map<string, { importPath: string; exportName: string; localName: string }>,
+): ZodFieldTemplateData {
   let schema = field.zodExpression;
+
+  for (const constraint of field.constraints) {
+    schema = applyConstraint(schema, constraint, refinements, imports);
+  }
 
   if (field.optional) {
     schema += ".optional()";
@@ -132,12 +204,19 @@ function relationshipSchema(
 
 export function zodTemplateData(graph: ApplicationGraph): ZodSchemasTemplateData {
   try {
+    const imports = new Map<string, { importPath: string; exportName: string; localName: string }>();
+    const refinements = refinementDefinitions(graph);
     const models = normalizeModelContexts(graph).map((model) => ({
       name: model.name,
-      fields: model.fields.map((field) => fieldSchema(field, model.name)),
+      fields: model.fields.map((field) => fieldSchema(field, model.name, refinements, imports)),
       relationships: model.relationships.map((relationship) => relationshipSchema(relationship)),
     } satisfies ZodModelTemplateData));
-    return { models };
+    return {
+      models,
+      refinementImports: [...imports.values()].sort((left, right) =>
+        left.localName.localeCompare(right.localName),
+      ),
+    };
   } catch (error) {
     if (error instanceof ModelContextError) {
       throw new ZodGenerationError(

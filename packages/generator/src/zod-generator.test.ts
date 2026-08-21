@@ -97,6 +97,59 @@ describe("zod generator", () => {
     );
   });
 
+  it("renders structured constraints and configured refinements", () => {
+    const User = defineModel({
+      name: "User",
+      fields: {
+        email: {
+          type: "string",
+          constraints: [
+            { kind: "minLength", value: 3 },
+            { kind: "email" },
+            { kind: "refine", id: "businessEmail" },
+          ],
+        },
+      },
+    });
+    const graph = buildGraph({
+      name: "structured-validation-app",
+      version: "1.0.0",
+      environment: "development",
+      stack: { language: "typescript", runtime: "node" },
+      definitions: {
+        refinements: {
+          businessEmail: { importPath: "./validation.js", exportName: "isBusinessEmail" },
+        },
+      },
+      models: [User],
+    });
+
+    const content = generateZodSchemas(graph)?.content;
+    expect(content).toContain(
+      'import { isBusinessEmail as refine_businessEmail } from "./validation.js";',
+    );
+    expect(content).toContain(
+      "email: z.string().min(3).email().refine(refine_businessEmail),",
+    );
+  });
+
+  it("fails clearly when a custom refinement is not configured", () => {
+    const graph = buildGraph({
+      name: "missing-refinement-app",
+      version: "1.0.0",
+      environment: "development",
+      stack: { language: "typescript", runtime: "node" },
+      models: [
+        defineModel({
+          name: "User",
+          fields: { email: { type: "string", constraints: [{ kind: "refine", id: "missing" }] } },
+        }),
+      ],
+    });
+
+    expect(() => generateZodSchemas(graph)).toThrow("custom refinement reference cannot be resolved");
+  });
+
   it("handles multiple models and non-identifier field names deterministically", () => {
     const First = defineModel({ name: "First", fields: { "display-name": field.string() } });
     const Second = defineModel({ name: "Second" });

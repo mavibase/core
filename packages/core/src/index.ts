@@ -21,12 +21,16 @@ import type { Diagnostic, ValidationResult } from "./diagnostics.js";
 
 export * from "./diagnostics.js";
 
+import type { StructuredConstraint } from "./validation.js";
+import { validateStructuredConstraints } from "./validation.js";
+
 export const version = "0.1.0";
 
 export * from "./routes.js";
 export * from "./parameters.js";
 export * from "./responses.js";
 export * from "./middleware.js";
+export * from "./validation.js";
 
 export * from "./database.js";
 
@@ -137,6 +141,8 @@ export interface FieldModifiers {
 export interface FieldDefinition {
   type: SemanticType;
   modifiers?: FieldModifiers;
+  constraints?: readonly StructuredConstraint[];
+  /** @deprecated Use constraints. */
   validation?: string;
 }
 
@@ -144,6 +150,7 @@ export interface NormalizedField {
   name: string;
   type: SemanticType;
   modifiers: Required<FieldModifiers>;
+  constraints: readonly StructuredConstraint[];
   validation?: string;
 }
 
@@ -159,6 +166,7 @@ export interface ModifiableField extends FieldDefinition {
   generated(): ModifiableField;
   readOnly(): ModifiableField;
   writeOnly(): ModifiableField;
+  constrain(...constraints: StructuredConstraint[]): ModifiableField;
   validate(expression: string): ModifiableField;
 }
 
@@ -198,6 +206,9 @@ const fieldPrototype = {
     if (!expression.trim()) throw new Error("Field validation expression must not be empty.");
     return withValidation(this, expression);
   },
+  constrain(this: ModifiableField, ...constraints: StructuredConstraint[]): ModifiableField {
+    return withConstraints(this, constraints);
+  },
 };
 
 /** Build a field from a type and optional modifiers */
@@ -205,6 +216,7 @@ function createField(
   type: SemanticType,
   modifiers?: FieldModifiers,
   validation?: string,
+  constraints?: readonly StructuredConstraint[],
 ): ModifiableField {
   const definition = Object.create(fieldPrototype) as ModifiableField;
 
@@ -218,16 +230,32 @@ function createField(
     definition.validation = validation;
   }
 
+  if (constraints !== undefined) {
+    definition.constraints = constraints;
+  }
+
   return definition;
 }
 
 /** Return a new field with the given modifiers merged in */
 function withModifiers(field: ModifiableField, modifiers: FieldModifiers): ModifiableField {
-  return createField(field.type, { ...field.modifiers, ...modifiers }, field.validation);
+  return createField(
+    field.type,
+    { ...field.modifiers, ...modifiers },
+    field.validation,
+    field.constraints,
+  );
 }
 
 function withValidation(field: ModifiableField, validation: string): ModifiableField {
-  return createField(field.type, field.modifiers, validation);
+  return createField(field.type, field.modifiers, validation, field.constraints);
+}
+
+function withConstraints(
+  field: ModifiableField,
+  constraints: readonly StructuredConstraint[],
+): ModifiableField {
+  return createField(field.type, field.modifiers, field.validation, constraints);
 }
 
 /** Factory for creating field definitions */
@@ -792,6 +820,17 @@ export function validateDefinition(definition: unknown): ValidationIssue[] {
           path: `models.${modelName}.fields.${name}.type`,
           message: `Invalid field type for "${modelName}.${name}".`,
         });
+      }
+      if (fieldDef && typeof fieldDef === "object") {
+        const constraints = (fieldDef as Record<string, unknown>)["constraints"];
+        if (constraints !== undefined) {
+          for (const message of validateStructuredConstraints(constraints)) {
+            issues.push({
+              path: `models.${modelName}.fields.${name}.constraints`,
+              message,
+            });
+          }
+        }
       }
     }
 

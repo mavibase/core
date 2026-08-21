@@ -416,6 +416,7 @@ export function buildGraph(definition: ApplicationDefinition): ApplicationGraph 
       name: definition.name,
       version: definition.version,
       environment: definition.environment,
+      ...(definition.definitions === undefined ? {} : { definitions: definition.definitions }),
       ...(definition.stack.web === undefined &&
       definition.stack.backend === undefined &&
       definition.stack.database === undefined
@@ -468,6 +469,7 @@ export function buildGraph(definition: ApplicationDefinition): ApplicationGraph 
           name: fieldName,
           type: fieldDef.type,
           modifiers: fieldDef.modifiers,
+          ...(fieldDef.constraints === undefined ? {} : { constraints: fieldDef.constraints }),
           ...(fieldDef.validation === undefined ? {} : { validation: fieldDef.validation }),
         }),
       );

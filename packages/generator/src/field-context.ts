@@ -4,7 +4,9 @@ import {
   type FieldDefinition,
   type NormalizedField,
   type SemanticType,
+  type StructuredConstraint,
   type ValidationResult,
+  validateStructuredConstraints,
 } from "@mavibase/core";
 
 export interface GeneratorFieldContext {
@@ -12,6 +14,7 @@ export interface GeneratorFieldContext {
   semanticType: SemanticType;
   typescriptType: string;
   zodExpression: string;
+  constraints: readonly StructuredConstraint[];
   postgresType?: string;
   openApiSchema: Record<string, unknown>;
   optional: boolean;
@@ -33,6 +36,22 @@ export class FieldContextError extends Error {
 function fieldName(path: string): string {
   const value = path.split(".").pop() ?? path;
   return value.replace(/\]$/, "");
+}
+
+function legacyConstraints(expression: string): readonly StructuredConstraint[] | undefined {
+  const value = expression.trim();
+  if (value === "z.string().email()") return [{ kind: "email" }];
+  const stringMin = value.match(/^z\.string\(\)\.min\((\d+)\)$/);
+  if (stringMin) return [{ kind: "minLength", value: Number(stringMin[1]) }];
+  const stringMax = value.match(/^z\.string\(\)\.max\((\d+)\)$/);
+  if (stringMax) return [{ kind: "maxLength", value: Number(stringMax[1]) }];
+  const numberMin = value.match(/^z\.number\(\)\.min\((-?\d+(?:\.\d+)?)\)$/);
+  if (numberMin) return [{ kind: "min", value: Number(numberMin[1]) }];
+  const numberMax = value.match(/^z\.number\(\)\.max\((-?\d+(?:\.\d+)?)\)$/);
+  if (numberMax) return [{ kind: "max", value: Number(numberMax[1]) }];
+  const pattern = value.match(/^z\.string\(\)\.regex\((["'])(.*)\1\)$/);
+  if (pattern) return [{ kind: "pattern", value: pattern[2] ?? "" }];
+  return undefined;
 }
 
 function normalizedModifiers(field: FieldDefinition): Required<NonNullable<FieldDefinition["modifiers"]>> {
@@ -68,6 +87,20 @@ export function normalizeField(field: FieldDefinition, path: string): Validation
     });
   }
   const modifiers = normalizedModifiers(field);
+  const constraints = [...(field.constraints ?? [])] as StructuredConstraint[];
+  if (typeof field.validation === "string") {
+    const legacy = legacyConstraints(field.validation);
+    if (!legacy) {
+      diagnostics.push({
+        severity: "error",
+        code: "field.validation.unsupported",
+        message: "Legacy validation expression is unsupported; use structured constraints.",
+        path: path + ".validation",
+      });
+    } else {
+      constraints.push(...legacy);
+    }
+  }
   if (modifiers.required && modifiers.optional) {
     diagnostics.push({
       severity: "error",
@@ -84,6 +117,14 @@ export function normalizeField(field: FieldDefinition, path: string): Validation
       path: `${path}.validation`,
     });
   }
+  for (const message of validateStructuredConstraints(constraints)) {
+    diagnostics.push({
+      severity: "error",
+      code: "field.constraints.invalid",
+      message,
+      path: `${path}.constraints`,
+    });
+  }
   if (diagnostics.length > 0) return { valid: false, diagnostics };
   return {
     valid: true,
@@ -91,7 +132,7 @@ export function normalizeField(field: FieldDefinition, path: string): Validation
       name: fieldName(path),
       type: field.type,
       modifiers,
-      ...(field.validation === undefined ? {} : { validation: field.validation }),
+      constraints: constraints as readonly StructuredConstraint[],
     },
     diagnostics: [],
   };
@@ -184,14 +225,15 @@ export function generatorFieldContext(
   const normalized = normalizeField(field, path);
   if (!normalized.valid) return { valid: false, diagnostics: normalized.diagnostics };
   const value = normalized.value as NormalizedField;
-  const { type, modifiers, validation } = value;
+  const { type, modifiers, constraints } = value;
   return {
     valid: true,
     value: {
       name: value.name,
       semanticType: type,
       typescriptType: typescriptType(type),
-      zodExpression: validation?.trim() || zodExpression(type),
+      zodExpression: zodExpression(type),
+      constraints,
       postgresType: postgresType(type),
       openApiSchema: openApiSchema(type),
       optional: modifiers.optional,

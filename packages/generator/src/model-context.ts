@@ -80,6 +80,9 @@ function fieldContext(
       ...(data["modifiers"] === undefined
         ? {}
         : { modifiers: data["modifiers"] as NonNullable<FieldDefinition["modifiers"]> }),
+      ...(data["constraints"] === undefined
+        ? {}
+        : { constraints: data["constraints"] as NonNullable<FieldDefinition["constraints"]> }),
       ...(data["validation"] === undefined ? {} : { validation: data["validation"] as string }),
     },
     `models.${modelName}.fields.${name}`,

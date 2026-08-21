@@ -1,4 +1,5 @@
-import type { ScalarType } from "@mavibase/core";
+import type { RefinementDefinition, ScalarType, StructuredConstraint } from "@mavibase/core";
+import { validateStructuredConstraints } from "@mavibase/core";
 import type { ApplicationGraph, GraphNode } from "@mavibase/application-graph";
 
 import type { GeneratedFile } from "./index.js";
@@ -10,12 +11,14 @@ interface RouteValidationParameter {
   name: string;
   location: ParameterLocation;
   schema: string;
+  constraints: readonly StructuredConstraint[];
   required: boolean;
 }
 
 export interface RouteValidationTemplateData {
   routes: { name: string; schemaName: string; parameters: RouteValidationParameter[] }[];
   schemaReferences: string[];
+  refinementImports: { importPath: string; exportName: string; localName: string }[];
 }
 
 export class RouteValidationGenerationError extends Error {
@@ -50,10 +53,66 @@ function propertyName(name: string): string {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) ? name : JSON.stringify(name);
 }
 
+function refinementDefinitions(graph: ApplicationGraph): Record<string, RefinementDefinition> {
+  const application = graph.nodes.find((node) => node.type === "application");
+  const definitions = application?.data?.["definitions"];
+  if (!definitions || typeof definitions !== "object" || Array.isArray(definitions)) return {};
+  const refinements = (definitions as Record<string, unknown>)["refinements"];
+  if (!refinements || typeof refinements !== "object" || Array.isArray(refinements)) return {};
+  return refinements as Record<string, RefinementDefinition>;
+}
+
+function applyConstraint(
+  expression: string,
+  constraint: StructuredConstraint,
+  refinements: Record<string, RefinementDefinition>,
+  imports: Map<string, { importPath: string; exportName: string; localName: string }>,
+): string {
+  if (constraint.kind === "minLength") return expression + ".min(" + constraint.value + ")";
+  if (constraint.kind === "maxLength") return expression + ".max(" + constraint.value + ")";
+  if (constraint.kind === "pattern") return expression + ".regex(new RegExp(" + JSON.stringify(constraint.value) + "))";
+  if (constraint.kind === "min") return expression + ".min(" + constraint.value + ")";
+  if (constraint.kind === "max") return expression + ".max(" + constraint.value + ")";
+  if (constraint.kind === "email") return expression + ".email()";
+  const definition = refinements[constraint.id];
+  if (
+    !definition ||
+    typeof definition.importPath !== "string" ||
+    !definition.importPath.startsWith(".") ||
+    typeof definition.exportName !== "string"
+  ) {
+    throw new RouteValidationGenerationError(
+      "Custom refinement reference cannot be resolved: \"" + constraint.id + "\".",
+    );
+  }
+  if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(definition.exportName)) {
+    throw new RouteValidationGenerationError(
+      "Custom refinement exportName is invalid: \"" + definition.exportName + "\".",
+    );
+  }
+  const localName = "refine_" + constraint.id.replace(/[^A-Za-z0-9_$]/g, "_");
+  imports.set(constraint.id, { importPath: definition.importPath, exportName: definition.exportName, localName });
+  return expression + ".refine(" + localName + ")";
+}
+
 function schemaName(routeName: string): string {
   const parts = routeName.split(/[^A-Za-z0-9_$]+/).filter(Boolean);
   const value = parts.map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`).join("");
   return `${value || "Route"}RequestSchema`;
+}
+
+function legacyConstraints(expression: string): readonly StructuredConstraint[] | undefined {
+  const value = expression.trim();
+  if (value === "z.string().email()") return [{ kind: "email" }];
+  const stringMin = value.match(/^z\.string\(\)\.min\((\d+)\)$/);
+  if (stringMin) return [{ kind: "minLength", value: Number(stringMin[1]) }];
+  const stringMax = value.match(/^z\.string\(\)\.max\((\d+)\)$/);
+  if (stringMax) return [{ kind: "maxLength", value: Number(stringMax[1]) }];
+  const numberMin = value.match(/^z\.number\(\)\.min\((-?\d+(?:\.\d+)?)\)$/);
+  if (numberMin) return [{ kind: "min", value: Number(numberMin[1]) }];
+  const numberMax = value.match(/^z\.number\(\)\.max\((-?\d+(?:\.\d+)?)\)$/);
+  if (numberMax) return [{ kind: "max", value: Number(numberMax[1]) }];
+  return undefined;
 }
 
 function routeParameters(route: GraphNode): RouteValidationParameter[] {
@@ -75,6 +134,7 @@ function routeParameters(route: GraphNode): RouteValidationParameter[] {
       const schema = parameter["schema"];
       const type = parameter["type"];
       const validation = parameter["validation"];
+      const constraints = [...((parameter["constraints"] as StructuredConstraint[] | undefined) ?? [])];
       if (typeof validation === "string" && !validation.trim()) {
         throw new RouteValidationGenerationError(
           `Invalid validation expression for route parameter "${name}".`,
@@ -85,18 +145,31 @@ function routeParameters(route: GraphNode): RouteValidationParameter[] {
           `Invalid schema reference for route parameter "${name}": "${schema}".`,
         );
       }
+      if (typeof validation === "string") {
+        const legacy = legacyConstraints(validation);
+        if (!legacy) {
+          throw new RouteValidationGenerationError(
+            "Legacy validation expression for route parameter \"" + name + "\" is unsupported; use structured constraints.",
+          );
+        }
+        constraints.push(...legacy);
+      }
+      for (const message of validateStructuredConstraints(constraints)) {
+        throw new RouteValidationGenerationError(
+          "Invalid constraints for route parameter \"" + name + "\": " + message,
+        );
+      }
       return {
         name,
         location: location as ParameterLocation,
         schema:
-          typeof validation === "string" && validation.trim()
-            ? validation
-            : typeof schema === "string" && schema.trim()
+          typeof schema === "string" && schema.trim()
             ? schema
             : typeof type === "string" && type in fieldSchemaMap
               ? fieldSchemaMap[type as ScalarType]
               : "z.unknown()",
         required: parameter["required"] === true,
+        constraints,
       };
     })
     .filter((parameter): parameter is RouteValidationParameter => parameter !== undefined)
@@ -106,11 +179,16 @@ function routeParameters(route: GraphNode): RouteValidationParameter[] {
 }
 
 export const routeValidationTemplate = defineTemplate<RouteValidationTemplateData>(
-  ({ routes, schemaReferences }) => {
+  ({ routes, schemaReferences, refinementImports }) => {
     const lines = [
       'import { z } from "zod";',
       'import { createApiError } from "./api-errors.js";',
       ...schemaReferences.map((reference) => `import { ${reference} } from "./schemas.js";`),
+      ...refinementImports.map(
+        (refinement) =>
+          "import { " + refinement.exportName + " as " + refinement.localName + " } from " +
+          JSON.stringify(refinement.importPath) + ";",
+      ),
       "",
     ];
 
@@ -175,11 +253,20 @@ export const routeValidationTemplate = defineTemplate<RouteValidationTemplateDat
 );
 
 export function routeValidationTemplateData(graph: ApplicationGraph): RouteValidationTemplateData {
+  const imports = new Map<string, { importPath: string; exportName: string; localName: string }>();
+  const refinements = refinementDefinitions(graph);
   const routes = graph.nodes
     .filter((node) => node.type === "route")
     .map((node) => {
       const name = nodeName(node) ?? node.id;
-      return { name, schemaName: schemaName(name), parameters: routeParameters(node) };
+      const parameters = routeParameters(node).map((parameter) => ({
+        ...parameter,
+        schema: parameter.constraints.reduce(
+          (expression, constraint) => applyConstraint(expression, constraint, refinements, imports),
+          parameter.schema,
+        ),
+      }));
+      return { name, schemaName: schemaName(name), parameters };
     })
     .sort((left, right) => left.name.localeCompare(right.name));
   const schemaReferences = [
@@ -204,7 +291,13 @@ export function routeValidationTemplateData(graph: ApplicationGraph): RouteValid
     );
   }
 
-  return { routes, schemaReferences };
+  return {
+    routes,
+    schemaReferences,
+    refinementImports: [...imports.values()].sort((left, right) =>
+      left.localName.localeCompare(right.localName),
+    ),
+  };
 }
 
 export function generateRouteValidation(graph: ApplicationGraph): GeneratedFile | undefined {
