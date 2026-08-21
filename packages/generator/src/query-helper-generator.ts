@@ -18,23 +18,37 @@ export interface QueryHelpersTemplateData {
 export const queryHelpersTemplate = defineTemplate<QueryHelpersTemplateData>(
   ({ models }) => {
     const imports = models.map((model) => `import type { ${model.name} } from "./types.js";`);
+    const shared = [
+      "export interface QueryOptions<TModel> {",
+      "  where?: Partial<TModel>;",
+      "  limit?: number;",
+      "  offset?: number;",
+      "}",
+      "",
+      "export interface ModelAdapter<TModel, TCreate = TModel> {",
+      "  findById(id: unknown): Promise<TModel | undefined>;",
+      "  findMany(options?: QueryOptions<TModel>): Promise<readonly TModel[]>;",
+      "  create(input: TCreate): Promise<TModel>;",
+      "  update(id: unknown, input: Partial<TCreate>): Promise<TModel>;",
+      "  delete(id: unknown): Promise<void>;",
+      "}",
+    ].join("\n");
     const declarations = models.map((model) => {
       const idType = model.hasId ? `${model.name}["id"]` : "string | number";
       const lines = [
         `export type ${model.name}Id = ${idType};`,
         "",
-        `export interface ${model.name}QueryOptions {`,
+        `export interface ${model.name}QueryOptions extends QueryOptions<${model.name}> {`,
         `  where?: Partial<${model.name}>;`,
         ...(model.relationshipNames.length === 0
           ? []
           : [
               `  with?: readonly (${model.relationshipNames.map((name) => JSON.stringify(name)).join(" | ")})[];`,
             ]),
-        "  limit?: number;",
-        "  offset?: number;",
         "}",
         "",
         `export interface ${model.name}QueryHelpers {`,
+        `  adapter: ModelAdapter<${model.name}>;`,
         `  findById(id: ${model.name}Id): Promise<${model.name} | undefined>;`,
         `  findMany(options?: ${model.name}QueryOptions): Promise<${model.name}[]>;`,
         `  create(input: ${model.name}): Promise<${model.name}>;`,
@@ -48,6 +62,8 @@ export const queryHelpersTemplate = defineTemplate<QueryHelpersTemplateData>(
     return (
       [
         ...imports,
+        ...(imports.length > 0 ? [""] : []),
+        shared,
         ...(imports.length > 0 && declarations.length > 0 ? [""] : []),
         ...declarations,
       ].join("\n\n") + (declarations.length > 0 ? "\n" : "")

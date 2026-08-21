@@ -27,6 +27,9 @@ describe("query helper generator", () => {
     expect(first).toEqual(second);
     expect(first?.path).toBe("query-helpers.ts");
     expect(first?.content).toContain('import type { User } from "./types.js";');
+    expect(first?.content).toContain("export interface ModelAdapter<TModel, TCreate = TModel>");
+    expect(first?.content).toContain("adapter: ModelAdapter<User>;");
+    expect(first?.content).toContain("export interface UserQueryOptions extends QueryOptions<User>");
     expect(first?.content).toContain('with?: readonly ("posts")[];');
     expect(first?.content).toContain("findById(id: UserId): Promise<User | undefined>;");
     expect(first?.content).toContain("findMany(options?: UserQueryOptions): Promise<User[]>;");
