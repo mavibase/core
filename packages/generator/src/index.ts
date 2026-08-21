@@ -16,6 +16,11 @@ import { generateRouteHandlers, type HandlerFramework } from "./route-handler-ge
 import { generateRouteMiddleware } from "./route-middleware-generator.js";
 import { generateApiErrors } from "./api-error-generator.js";
 import { generateOpenApiDocument } from "./openapi-generator.js";
+import {
+  databaseProviderFromGraph,
+  generateDatabaseArtifacts,
+  type DatabaseGenerationOptions,
+} from "./database-generator.js";
 
 export const version = "0.1.0";
 
@@ -23,6 +28,7 @@ export interface GenerateOptions {
   outDir?: string;
   layout?: "flat" | "structured";
   framework?: HandlerFramework;
+  database?: DatabaseGenerationOptions;
 }
 
 export interface GeneratedFile {
@@ -194,6 +200,16 @@ export function generate(graph: ApplicationGraph, options?: GenerateOptions): Ge
     artifacts.push(openApiFile);
   }
 
+  const databaseProvider = options?.database?.provider ?? databaseProviderFromGraph(graph);
+  if (databaseProvider) {
+    artifacts.push(
+      ...generateDatabaseArtifacts(graph, {
+        ...options?.database,
+        provider: databaseProvider,
+      }),
+    );
+  }
+
   const outDir = options?.outDir ?? "generated";
   const outputArtifacts =
     options?.layout === "structured" ? artifacts.map(structuredArtifact) : artifacts;
@@ -255,5 +271,6 @@ export * from "./api-error-generator.js";
 export * from "./openapi-generator.js";
 export * from "./schema-normalizer.js";
 export * from "./schema-diff.js";
+export * from "./database-generator.js";
 export * from "./generation-plan.js";
 export * from "./generation-manifest.js";
