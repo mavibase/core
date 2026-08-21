@@ -3,9 +3,12 @@ import type { SchemaExpression } from "@mavibase/core";
 export interface SchemaExpressionRenderContext {
   modelNames: ReadonlySet<string>;
   schemaNames: ReadonlySet<string>;
+  mode?: SchemaExpressionMode;
   modelReferences?: Set<string>;
   schemaReferences?: Set<string>;
 }
+
+export type SchemaExpressionMode = "default" | "input" | "output" | "persistence";
 
 export class SchemaExpressionGenerationError extends Error {
   readonly code = "MAVIBASE_SCHEMA_EXPRESSION_GENERATION_ERROR";
@@ -24,19 +27,25 @@ function schemaExportName(name: string): string {
   return `${name}Schema`;
 }
 
+function contextualSchemaExportName(name: string, mode: SchemaExpressionMode): string {
+  return mode === "default" ? schemaExportName(name) : `${name}${mode[0]!.toUpperCase()}${mode.slice(1)}Schema`;
+}
+
 export function renderSchemaExpression(
   expression: SchemaExpression,
   context: SchemaExpressionRenderContext,
   path = "schema",
 ): string {
+  const mode = context.mode ?? "default";
   if (expression.kind === "model") {
     if (!context.modelNames.has(expression.model)) {
       throw new SchemaExpressionGenerationError(
         `Model schema reference "${expression.model}" at "${path}" does not match a generated model.`,
       );
     }
-    context.modelReferences?.add(schemaExportName(expression.model));
-    return `z.lazy(() => ${schemaExportName(expression.model)})`;
+    const name = contextualSchemaExportName(expression.model, mode);
+    context.modelReferences?.add(name);
+    return `z.lazy(() => ${name})`;
   }
   if (expression.kind === "reference") {
     if (!context.schemaNames.has(expression.schema.name)) {
@@ -44,8 +53,9 @@ export function renderSchemaExpression(
         `Schema reference "${expression.schema.name}" at "${path}" does not match the schema registry.`,
       );
     }
-    context.schemaReferences?.add(schemaExportName(expression.schema.name));
-    return `z.lazy(() => ${schemaExportName(expression.schema.name)})`;
+    const name = contextualSchemaExportName(expression.schema.name, mode);
+    context.schemaReferences?.add(name);
+    return `z.lazy(() => ${name})`;
   }
   if (expression.kind === "object") {
     const fields = Object.keys(expression.fields)

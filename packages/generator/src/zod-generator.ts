@@ -11,6 +11,7 @@ import {
   type NormalizedModelRelationshipContext,
 } from "./model-context.js";
 import { renderSchemaExpression } from "./schema-expression-generator.js";
+import type { SchemaExpressionMode } from "./schema-expression-generator.js";
 
 export interface ZodFieldTemplateData {
   name: string;
@@ -19,12 +20,14 @@ export interface ZodFieldTemplateData {
 
 export interface ZodModelTemplateData {
   name: string;
+  exportName: string;
   fields: ZodFieldTemplateData[];
   relationships: ZodFieldTemplateData[];
 }
 
 export interface ZodSchemaTemplateData {
   name: string;
+  exportName: string;
   schema: string;
 }
 
@@ -72,11 +75,11 @@ export const zodSchemasTemplate = defineTemplate<ZodSchemasTemplateData>(
     ];
 
     for (const schema of schemas) {
-      lines.push(`export const ${schema.name}Schema = ${schema.schema};`, "");
+      lines.push(`export const ${schema.exportName} = ${schema.schema};`, "");
     }
 
     for (const model of models) {
-      lines.push(`export const ${model.name}Schema = z.object({`);
+      lines.push(`export const ${model.exportName} = z.object({`);
 
       for (const field of model.fields) {
         lines.push(`  ${propertyName(field.name)}: ${field.schema},`);
@@ -222,6 +225,18 @@ function relationshipSchema(
   };
 }
 
+const schemaModes: readonly SchemaExpressionMode[] = ["default", "input", "output", "persistence"];
+
+function schemaSuffix(mode: SchemaExpressionMode): string {
+  return mode === "default" ? "" : mode[0]!.toUpperCase() + mode.slice(1);
+}
+
+function fieldIncluded(field: NormalizedModelFieldContext, mode: SchemaExpressionMode): boolean {
+  if (mode === "input") return !field.readOnly && !field.generated;
+  if (mode === "output") return !field.writeOnly;
+  return true;
+}
+
 export function zodTemplateData(graph: ApplicationGraph): ZodSchemasTemplateData {
   try {
     const imports = new Map<string, { importPath: string; exportName: string; localName: string }>();
@@ -230,17 +245,25 @@ export function zodTemplateData(graph: ApplicationGraph): ZodSchemasTemplateData
     const modelNames = new Set(modelContexts.map((model) => model.name));
     const schemas = schemaDefinitions(graph);
     const schemaNames = new Set(Object.keys(schemas));
-    const schemaData = Object.keys(schemas)
-      .sort((left, right) => left.localeCompare(right))
-      .map((name) => ({
-        name,
-        schema: renderSchemaExpression(schemas[name]!, { modelNames, schemaNames }),
-      }));
-    const models = modelContexts.map((model) => ({
-      name: model.name,
-      fields: model.fields.map((field) => fieldSchema(field, model.name, refinements, imports)),
-      relationships: model.relationships.map((relationship) => relationshipSchema(relationship)),
-    } satisfies ZodModelTemplateData));
+    const schemaData = schemaModes.flatMap((mode) =>
+      Object.keys(schemas)
+        .sort((left, right) => left.localeCompare(right))
+        .map((name) => ({
+          name,
+          exportName: `${name}${schemaSuffix(mode)}Schema`,
+          schema: renderSchemaExpression(schemas[name]!, { modelNames, schemaNames, mode }),
+        })),
+    );
+    const models = schemaModes.flatMap((mode) =>
+      modelContexts.map((model) => ({
+        name: model.name,
+        exportName: `${model.name}${schemaSuffix(mode)}Schema`,
+        fields: model.fields
+          .filter((field) => fieldIncluded(field, mode))
+          .map((field) => fieldSchema(field, model.name, refinements, imports)),
+        relationships: model.relationships.map((relationship) => relationshipSchema(relationship)),
+      } satisfies ZodModelTemplateData)),
+    );
     return {
       schemas: schemaData,
       models,

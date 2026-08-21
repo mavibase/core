@@ -123,8 +123,8 @@ describe("route validation generator", () => {
     );
 
     const content = generateRouteValidation(graph)?.content;
-    expect(content).toContain('import { CreateUserSchema } from "./schemas.js";');
-    expect(content).toContain("body: z.lazy(() => CreateUserSchema).optional(),");
+    expect(content).toContain('import { CreateUserInputSchema } from "./schemas.js";');
+    expect(content).toContain("body: z.lazy(() => CreateUserInputSchema).optional(),");
   });
 
   it("generates body, query, params, and headers validation together", () => {

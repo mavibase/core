@@ -28,18 +28,12 @@ describe("zod generator", () => {
 
     expect(first).toEqual(second);
     expect(first?.path).toBe("schemas.ts");
-    expect(first?.content).toBe(
-      [
-        'import { z } from "zod";',
-        "",
-        "export const UserSchema = z.object({",
-        "  age: z.number().int(),",
-        "  id: z.string().uuid(),",
-        "  name: z.string(),",
-        "});",
-        "",
-      ].join("\n"),
-    );
+    expect(first?.content).toContain('import { z } from "zod";');
+    expect(first?.content).toContain("export const UserSchema = z.object({");
+    expect(first?.content).toContain("export const UserInputSchema = z.object({");
+    expect(first?.content).toContain("export const UserOutputSchema = z.object({");
+    expect(first?.content).toContain("export const UserPersistenceSchema = z.object({");
+    expect(first?.content).toContain("  age: z.number().int(),");
   });
 
   it("maps supported field types and modifiers", () => {
@@ -131,6 +125,39 @@ describe("zod generator", () => {
     expect(content).toContain(
       "email: z.string().min(3).email().refine(refine_businessEmail),",
     );
+  });
+
+  it("filters read-only and write-only fields by schema context", () => {
+    const graph = buildGraph({
+      name: "schema-context-app",
+      version: "1.0.0",
+      environment: "development",
+      stack: { language: "typescript", runtime: "node" },
+      models: [
+        defineModel({
+          name: "User",
+          fields: {
+            id: field.uuid().readOnly(),
+            password: field.string().writeOnly(),
+            name: field.string(),
+          },
+        }),
+      ],
+    });
+
+    const content = generateZodSchemas(graph)?.content ?? "";
+    const input = content.slice(
+      content.indexOf("export const UserInputSchema"),
+      content.indexOf("export const UserOutputSchema"),
+    );
+    const output = content.slice(
+      content.indexOf("export const UserOutputSchema"),
+      content.indexOf("export const UserPersistenceSchema"),
+    );
+    expect(input).toContain("password: z.string(),");
+    expect(input).not.toContain("id: z.string().uuid(),");
+    expect(output).toContain("id: z.string().uuid(),");
+    expect(output).not.toContain("password: z.string(),");
   });
 
   it("renders reusable composed schemas and model references", () => {

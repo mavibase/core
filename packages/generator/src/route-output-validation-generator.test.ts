@@ -67,6 +67,35 @@ describe("route output validation generator", () => {
     expect(generateRouteOutputValidation(graph)?.content).toContain("200: z.unknown(),");
   });
 
+  it("uses output-context schemas for composed response expressions", () => {
+    const graph = buildGraph(
+      defineApp({
+        name: "output-context-app",
+        version: "1.0.0",
+        environment: "development",
+        stack: { language: "typescript", runtime: "node" },
+        models: [defineModel({ name: "User" })],
+        routes: [
+          defineRoute({
+            name: "users.get",
+            method: "GET",
+            path: "/users",
+            responses: [
+              defineResponse({
+                status: 200,
+                schema: { kind: "model", model: "User" },
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+
+    const content = generateRouteOutputValidation(graph)?.content;
+    expect(content).toContain('import { UserOutputSchema } from "./schemas.js";');
+    expect(content).toContain("200: z.lazy(() => UserOutputSchema),");
+  });
+
   it("rejects unavailable response model schemas", () => {
     const graph = buildGraph(
       defineApp({

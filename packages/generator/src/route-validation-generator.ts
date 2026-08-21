@@ -286,6 +286,7 @@ export function routeValidationTemplateData(graph: ApplicationGraph): RouteValid
             : renderSchemaExpression(parameter.schema, {
                 modelNames,
                 schemaNames,
+                mode: "input",
                 modelReferences: schemaExpressionReferences,
                 schemaReferences: schemaExpressionReferences,
               }),
@@ -303,8 +304,11 @@ export function routeValidationTemplateData(graph: ApplicationGraph): RouteValid
     ),
     ...schemaExpressionReferences,
   ].sort((left, right) => left.localeCompare(right));
-  const modelSchemas = new Set([...modelNames].map((name) => `${name}Schema`));
-  const generatedSchemas = new Set([...modelSchemas, ...[...schemaNames].map((name) => `${name}Schema`)]);
+  const contextualNames = (names: ReadonlySet<string>): string[] =>
+    ["Schema", "InputSchema", "OutputSchema", "PersistenceSchema"].flatMap((suffix) =>
+      [...names].map((name) => `${name}${suffix}`),
+    );
+  const generatedSchemas = new Set([...contextualNames(modelNames), ...contextualNames(schemaNames)]);
   const missingSchema = schemaReferences.find((reference) => !generatedSchemas.has(reference));
   if (missingSchema) {
     throw new RouteValidationGenerationError(

@@ -116,8 +116,11 @@ export function routeOutputValidationTemplateData(
       .filter((name): name is string => name !== undefined)
   );
   const schemaNames = new Set(Object.keys(schemaDefinitions(graph)));
-  const modelSchemas = new Set([...modelNames].map((name) => `${name}Schema`));
-  const generatedSchemas = new Set([...modelSchemas, ...[...schemaNames].map((name) => `${name}Schema`)]);
+  const contextualNames = (names: ReadonlySet<string>): string[] =>
+    ["Schema", "InputSchema", "OutputSchema", "PersistenceSchema"].flatMap((suffix) =>
+      [...names].map((name) => `${name}${suffix}`),
+    );
+  const generatedSchemas = new Set([...contextualNames(modelNames), ...contextualNames(schemaNames)]);
   const routes = graph.nodes
     .filter((node) => node.type === "route")
     .map((node) => {
@@ -140,6 +143,7 @@ export function routeOutputValidationTemplateData(
               ? renderSchemaExpression(schemaValue as SchemaExpression, {
                   modelNames,
                   schemaNames,
+                  mode: "output",
                   modelReferences: references,
                   schemaReferences: references,
                 })
