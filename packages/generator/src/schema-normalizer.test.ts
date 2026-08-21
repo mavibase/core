@@ -3,7 +3,11 @@ import { describe, expect, it } from "vitest";
 import { buildGraph } from "@mavibase/application-graph";
 import { defineApp, defineModel, field } from "@mavibase/core";
 
-import { normalizeDatabaseSchema, SchemaNormalizationError } from "./schema-normalizer.js";
+import {
+  normalizeDatabaseSchema,
+  SchemaNormalizationError,
+  validateDatabaseSchemaCapabilities,
+} from "./schema-normalizer.js";
 
 describe("database schema normalizer", () => {
   it("derives deterministic tables, columns, indexes, constraints, and naming policy", () => {
@@ -69,5 +73,52 @@ describe("database schema normalizer", () => {
         edges: [{ from: "missing", to: "also-missing", type: "contains" }],
       }),
     ).toThrow(SchemaNormalizationError);
+  });
+
+  it("rejects schema features unsupported by a provider contract", () => {
+    const graph = buildGraph(
+      defineApp({
+        name: "schema-app",
+        version: "1.0.0",
+        environment: "test",
+        stack: { language: "typescript", runtime: "node" },
+        models: [
+          defineModel({
+            name: "Post",
+            fields: { tags: field.array(field.string()), label: field.string() },
+            indexes: [{ columns: ["tags", "label"] }],
+          }),
+        ],
+      }),
+    );
+    const schema = normalizeDatabaseSchema(graph);
+    const issues = validateDatabaseSchemaCapabilities(schema, {
+      scalarTypes: ["json"],
+      features: new Set(),
+      constraints: new Set(),
+      indexes: { composite: false, unique: false },
+      migrationOperations: new Set(),
+      supportsDestructiveMigrations: false,
+    });
+    expect(issues.map((issue) => issue.message)).toEqual(
+      expect.arrayContaining([
+        "Provider does not support array fields.",
+        "Provider does not support composite indexes.",
+      ]),
+    );
+
+    const migrationIssues = validateDatabaseSchemaCapabilities(
+      { ...schema, operations: [{ kind: "drop-table", table: "Post" }] },
+      {
+        scalarTypes: ["json", "text"],
+        constraints: new Set(),
+        indexes: { composite: true, unique: true },
+        migrationOperations: new Set(["drop-table"]),
+        supportsDestructiveMigrations: false,
+      },
+    );
+    expect(migrationIssues.map((issue) => issue.message)).toContain(
+      'Provider does not support destructive migration operation "drop-table".',
+    );
   });
 });

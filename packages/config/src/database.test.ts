@@ -55,6 +55,18 @@ describe("database providers", () => {
     expect(registry.capabilities("sqlite")).not.toContain("enums");
   });
 
+  it("exposes typed database provider capabilities", () => {
+    const registry = createDefaultDatabaseProviderRegistry();
+    const postgresql = registry.databaseCapabilities("postgresql");
+    const sqlite = registry.databaseCapabilities("sqlite");
+
+    expect(postgresql?.scalarTypes).toContain("bigint");
+    expect(postgresql?.features?.has("arrays")).toBe(true);
+    expect(postgresql?.indexes).toEqual({ composite: true, unique: true });
+    expect(sqlite?.features?.has("arrays") ?? false).toBe(false);
+    expect(sqlite?.supportsDestructiveMigrations).toBe(false);
+  });
+
   it("validates identifiers, categories, versions, capabilities, and configuration", () => {
     const issues = validateDatabaseProviderDefinition({
       id: "postgres",

@@ -16,6 +16,26 @@ import {
 export interface SchemaNormalizationOptions {
   seeds?: readonly DatabaseSeedDefinition[];
   naming?: Partial<DatabaseNamingPolicy>;
+  capabilities?: DatabaseProviderCapabilities;
+}
+
+export interface DatabaseProviderCapabilities {
+  scalarTypes: readonly string[];
+  features?: ReadonlySet<"arrays" | "enums">;
+  constraints: ReadonlySet<"primary" | "foreign-key" | "unique" | "check">;
+  indexes: { composite: boolean; unique: boolean };
+  migrationOperations: ReadonlySet<
+    | "create-table"
+    | "drop-table"
+    | "add-column"
+    | "drop-column"
+    | "alter-column"
+    | "create-index"
+    | "drop-index"
+    | "add-constraint"
+    | "drop-constraint"
+  >;
+  supportsDestructiveMigrations: boolean;
 }
 
 export interface SchemaNormalizationIssue {
@@ -32,6 +52,80 @@ export class SchemaNormalizationError extends Error {
     this.name = "SchemaNormalizationError";
     this.issues = issues;
   }
+}
+
+export function validateDatabaseSchemaCapabilities(
+  schema: DatabaseSchemaModel,
+  capabilities: DatabaseProviderCapabilities,
+): SchemaNormalizationIssue[] {
+  const issues: SchemaNormalizationIssue[] = [];
+  for (const [tableIndex, table] of schema.tables.entries()) {
+    for (const [columnIndex, column] of table.columns.entries()) {
+      if (!capabilities.scalarTypes.includes(column.type)) {
+        issues.push({
+          path: `tables[${tableIndex}].columns[${columnIndex}].type`,
+          message: `Provider does not support scalar type "${column.type}".`,
+        });
+      }
+      const semanticType = column.semanticType;
+      if (semanticType && typeof semanticType === "object") {
+        const kind = (semanticType as { kind?: unknown }).kind;
+        if (kind === "array" && !capabilities.features?.has("arrays")) {
+          issues.push({
+            path: `tables[${tableIndex}].columns[${columnIndex}].type`,
+            message: "Provider does not support array fields.",
+          });
+        }
+        if (kind === "enum" && !capabilities.features?.has("enums")) {
+          issues.push({
+            path: `tables[${tableIndex}].columns[${columnIndex}].type`,
+            message: "Provider does not support enum fields.",
+          });
+        }
+      }
+    }
+    for (const [indexIndex, index] of (table.indexes ?? []).entries()) {
+      if (index.columns.length > 1 && !capabilities.indexes.composite) {
+        issues.push({
+          path: `tables[${tableIndex}].indexes[${indexIndex}]`,
+          message: "Provider does not support composite indexes.",
+        });
+      }
+      if (index.unique && !capabilities.indexes.unique) {
+        issues.push({
+          path: `tables[${tableIndex}].indexes[${indexIndex}].unique`,
+          message: "Provider does not support unique indexes.",
+        });
+      }
+    }
+    for (const [constraintIndex, constraint] of (table.constraints ?? []).entries()) {
+      const capability = constraint.type === "primary-key" ? "primary" : constraint.type;
+      if (!capabilities.constraints.has(capability)) {
+        issues.push({
+          path: `tables[${tableIndex}].constraints[${constraintIndex}].type`,
+          message: `Provider does not support ${constraint.type} constraints.`,
+        });
+      }
+    }
+  }
+  for (const [operationIndex, operation] of schema.operations.entries()) {
+    if (!capabilities.migrationOperations.has(operation.kind)) {
+      issues.push({
+        path: `operations[${operationIndex}].kind`,
+        message: `Provider does not support migration operation "${operation.kind}".`,
+      });
+    }
+    if (
+      ["drop-table", "drop-column", "drop-index", "drop-constraint"].includes(operation.kind) &&
+      !capabilities.supportsDestructiveMigrations
+    ) {
+      issues.push({
+        path: `operations[${operationIndex}].kind`,
+        message: `Provider does not support destructive migration operation "${operation.kind}".`,
+      });
+    }
+  }
+  return issues;
 }
 
 function nodeName(node: GraphNode): string | undefined {
@@ -132,7 +226,7 @@ export function normalizeDatabaseSchema(
     version: graph.version,
     tables,
   });
-  return {
+  const normalized: DatabaseSchemaModel = {
     ...schema,
     seeds,
     naming: {
@@ -143,4 +237,9 @@ export function normalizeDatabaseSchema(
     },
     operations: [],
   };
+  if (options.capabilities) {
+    const issues = validateDatabaseSchemaCapabilities(normalized, options.capabilities);
+    if (issues.length > 0) throw new SchemaNormalizationError(issues);
+  }
+  return normalized;
 }
