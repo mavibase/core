@@ -484,7 +484,16 @@ export function buildGraph(definition: ApplicationDefinition): ApplicationGraph 
         createNode("relationship", relId, {
           name: relName,
           type: relDef.type,
-          model: relDef.model,
+          ...(relDef.model === undefined ? {} : { model: relDef.model }),
+          ...(relDef.inverse === undefined ? {} : { inverse: relDef.inverse }),
+          ...(relDef.field === undefined ? {} : { field: relDef.field }),
+          ...(relDef.through === undefined ? {} : { through: relDef.through }),
+          ...(relDef.owner === undefined ? {} : { owner: relDef.owner }),
+          ...(relDef.required === undefined ? {} : { required: relDef.required }),
+          ...(relDef.optional === undefined ? {} : { optional: relDef.optional }),
+          ...(relDef.foreignKey === undefined ? {} : { foreignKey: relDef.foreignKey }),
+          ...(relDef.onDelete === undefined ? {} : { onDelete: relDef.onDelete }),
+          ...(relDef.onUpdate === undefined ? {} : { onUpdate: relDef.onUpdate }),
         }),
       );
 

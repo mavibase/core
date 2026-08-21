@@ -279,6 +279,8 @@ export const field = {
 
 /** Mavibase relationship types */
 export type RelationshipType = "one-to-one" | "one-to-many" | "many-to-one" | "many-to-many";
+export type RelationshipOwner = "source" | "target";
+export type RelationshipReferentialAction = "cascade" | "restrict" | "set-null" | "no-action";
 
 /** A relationship definition describes a link to another model */
 export interface RelationshipDefinition {
@@ -286,6 +288,15 @@ export interface RelationshipDefinition {
 
   /** Target model the relationship points to */
   model?: string;
+  inverse?: string;
+  field?: string;
+  through?: string;
+  owner?: RelationshipOwner;
+  required?: boolean;
+  optional?: boolean;
+  foreignKey?: string;
+  onDelete?: RelationshipReferentialAction;
+  onUpdate?: RelationshipReferentialAction;
 }
 
 /** A relationship with a chainable target helper */
@@ -816,11 +827,115 @@ export function validateDefinition(definition: unknown): ValidationIssue[] {
 
       const targetModel = relObj && relObj["model"];
 
-      if (typeof targetModel === "string" && !modelNames.has(targetModel)) {
+      if (!isNonEmptyString(targetModel)) {
+        issues.push({
+          path: `models.${modelName}.relationships.${name}.model`,
+          message: `Relationship "${modelName}.${name}" must define a target model.`,
+        });
+      } else if (!modelNames.has(targetModel)) {
         issues.push({
           path: `models.${modelName}.relationships.${name}.model`,
           message: `Relationship "${modelName}.${name}" references unknown model "${targetModel}".`,
         });
+      }
+
+      for (const key of ["inverse", "field", "through", "foreignKey"] as const) {
+        if (relObj?.[key] !== undefined && !isNonEmptyString(relObj[key])) {
+          issues.push({
+            path: `models.${modelName}.relationships.${name}.${key}`,
+            message: `Relationship ${key} must be a non-empty string when provided.`,
+          });
+        }
+      }
+      if (relObj?.["owner"] !== undefined && !["source", "target"].includes(String(relObj["owner"]))) {
+        issues.push({
+          path: `models.${modelName}.relationships.${name}.owner`,
+          message: "Relationship owner must be source or target.",
+        });
+      }
+      for (const key of ["required", "optional"] as const) {
+        if (relObj?.[key] !== undefined && typeof relObj[key] !== "boolean") {
+          issues.push({
+            path: `models.${modelName}.relationships.${name}.${key}`,
+            message: `Relationship ${key} must be a boolean when provided.`,
+          });
+        }
+      }
+      if (
+        typeof relObj?.["required"] === "boolean" &&
+        typeof relObj?.["optional"] === "boolean" &&
+        relObj["required"] === relObj["optional"]
+      ) {
+        issues.push({
+          path: `models.${modelName}.relationships.${name}`,
+          message: "A relationship cannot be both required and optional.",
+        });
+      }
+      for (const key of ["onDelete", "onUpdate"] as const) {
+        if (
+          relObj?.[key] !== undefined &&
+          !["cascade", "restrict", "set-null", "no-action"].includes(String(relObj[key]))
+        ) {
+          issues.push({
+            path: `models.${modelName}.relationships.${name}.${key}`,
+            message: `Relationship ${key} must be a valid referential action.`,
+          });
+        }
+      }
+      if (relType === "many-to-many") {
+        const through = relObj?.["through"];
+        if (!isNonEmptyString(through)) {
+          issues.push({
+            path: `models.${modelName}.relationships.${name}.through`,
+            message: "Many-to-many relationships must define an explicit join model through field.",
+          });
+        } else if (!modelNames.has(through)) {
+          issues.push({
+            path: `models.${modelName}.relationships.${name}.through`,
+            message: `Many-to-many join model does not exist: "${through}".`,
+          });
+        }
+      }
+    }
+  }
+
+  const modelsByName = new Map(
+    models
+      .filter(isRecord)
+      .map((model) => [model["name"], model] as const)
+      .filter(([name]) => typeof name === "string"),
+  );
+  const inverseTypes: Record<string, string> = {
+    "one-to-one": "one-to-one",
+    "one-to-many": "many-to-one",
+    "many-to-one": "one-to-many",
+    "many-to-many": "many-to-many",
+  };
+  for (const model of models) {
+    if (!isRecord(model) || typeof model["name"] !== "string") continue;
+    const relationships = isRecord(model["relationships"]) ? model["relationships"] : {};
+    for (const [name, relationshipValue] of Object.entries(relationships)) {
+      if (!isRecord(relationshipValue) || typeof relationshipValue["inverse"] !== "string") continue;
+      const target = relationshipValue["model"];
+      const targetModel = typeof target === "string" ? modelsByName.get(target) : undefined;
+      const inverseName = relationshipValue["inverse"];
+      const inverseRelationships = targetModel && isRecord(targetModel["relationships"])
+        ? targetModel["relationships"]
+        : undefined;
+      const inverse = inverseRelationships?.[inverseName];
+      const path = `models.${model["name"]}.relationships.${name}.inverse`;
+      if (!isRecord(inverse)) {
+        issues.push({ path, message: `Inverse relationship does not exist: "${String(target)}.${inverseName}".` });
+        continue;
+      }
+      if (inverse["model"] !== model["name"]) {
+        issues.push({ path, message: "Inverse relationship must target the source model." });
+      }
+      if (inverse["inverse"] !== name) {
+        issues.push({ path, message: "Inverse relationship must point back to the source relationship." });
+      }
+      if (inverseTypes[String(relationshipValue["type"])] !== inverse["type"]) {
+        issues.push({ path, message: "Relationship cardinality does not match its inverse." });
       }
     }
   }

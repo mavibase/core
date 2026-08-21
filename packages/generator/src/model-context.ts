@@ -20,6 +20,15 @@ export interface NormalizedModelRelationshipContext {
   target: string;
   type: "one-to-one" | "one-to-many" | "many-to-one" | "many-to-many";
   collection: boolean;
+  required: boolean;
+  optional: boolean;
+  owner?: "source" | "target";
+  inverse?: string;
+  field?: string;
+  through?: string;
+  foreignKey?: string;
+  onDelete?: "cascade" | "restrict" | "set-null" | "no-action";
+  onUpdate?: "cascade" | "restrict" | "set-null" | "no-action";
 }
 
 export interface NormalizedModelContext {
@@ -49,6 +58,12 @@ function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function referentialAction(value: unknown): "cascade" | "restrict" | "set-null" | "no-action" | undefined {
+  return value === "cascade" || value === "restrict" || value === "set-null" || value === "no-action"
+    ? value
+    : undefined;
 }
 
 function fieldContext(
@@ -108,11 +123,51 @@ function relationshipContext(
       `unsupported relationship type "${String(type)}"`,
     );
   }
-  return { name, target, type, collection: type === "one-to-many" || type === "many-to-many" };
+  const required = data["required"] === true;
+  const optional = typeof data["optional"] === "boolean" ? data["optional"] : !required;
+  if (required && data["optional"] === true) {
+    throw new ModelContextError(
+      `models.${modelName}.relationships.${name}`,
+      "relationship cannot be both required and optional",
+    );
+  }
+  const owner = data["owner"];
+  if (owner !== undefined && owner !== "source" && owner !== "target") {
+    throw new ModelContextError(
+      `models.${modelName}.relationships.${name}.owner`,
+      "relationship owner must be source or target",
+    );
+  }
+  const actions = new Set(["cascade", "restrict", "set-null", "no-action"]);
+  for (const key of ["onDelete", "onUpdate"] as const) {
+    if (data[key] !== undefined && !actions.has(data[key] as string)) {
+      throw new ModelContextError(
+        `models.${modelName}.relationships.${name}.${key}`,
+        "relationship referential action is invalid",
+      );
+    }
+  }
+  const onDelete = referentialAction(data["onDelete"]);
+  const onUpdate = referentialAction(data["onUpdate"]);
+  return {
+    name,
+    target,
+    type,
+    collection: type === "one-to-many" || type === "many-to-many",
+    required,
+    optional,
+    ...(owner === undefined ? {} : { owner }),
+    ...(typeof data["inverse"] === "string" ? { inverse: data["inverse"] } : {}),
+    ...(typeof data["field"] === "string" ? { field: data["field"] } : {}),
+    ...(typeof data["through"] === "string" ? { through: data["through"] } : {}),
+    ...(typeof data["foreignKey"] === "string" ? { foreignKey: data["foreignKey"] } : {}),
+    ...(onDelete === undefined ? {} : { onDelete }),
+    ...(onUpdate === undefined ? {} : { onUpdate }),
+  };
 }
 
 export function normalizeModelContexts(graph: ApplicationGraph): readonly NormalizedModelContext[] {
-  return graph.nodes
+  const contexts = graph.nodes
     .filter((node) => node.type === "model")
     .map((model) => {
       const name = nodeName(model) ?? model.id;
@@ -136,4 +191,65 @@ export function normalizeModelContexts(graph: ApplicationGraph): readonly Normal
       return { name, table: name, fields, relationships };
     })
     .sort((left, right) => left.name.localeCompare(right.name));
+  const models = new Map(contexts.map((model) => [model.name, model]));
+  const inverseTypes: Record<NormalizedModelRelationshipContext["type"], string> = {
+    "one-to-one": "one-to-one",
+    "one-to-many": "many-to-one",
+    "many-to-one": "one-to-many",
+    "many-to-many": "many-to-many",
+  };
+  for (const model of contexts) {
+    const fields = new Set(model.fields.map((field) => field.name));
+    for (const relationship of model.relationships) {
+      const target = models.get(relationship.target);
+      if (!target) {
+        throw new ModelContextError(
+          `models.${model.name}.relationships.${relationship.name}.model`,
+          `relationship target does not exist: "${relationship.target}"`,
+        );
+      }
+      if (relationship.field && !fields.has(relationship.field)) {
+        throw new ModelContextError(
+          `models.${model.name}.relationships.${relationship.name}.field`,
+          `relationship field does not exist: "${relationship.field}"`,
+        );
+      }
+      if (relationship.type === "many-to-many") {
+        if (!relationship.through) {
+          throw new ModelContextError(
+            `models.${model.name}.relationships.${relationship.name}.through`,
+            "many-to-many relationships require an explicit join model",
+          );
+        }
+        if (!models.has(relationship.through)) {
+          throw new ModelContextError(
+            `models.${model.name}.relationships.${relationship.name}.through`,
+            `join model does not exist: "${relationship.through}"`,
+          );
+        }
+      }
+      if (relationship.inverse) {
+        const inverse = target.relationships.find((candidate) => candidate.name === relationship.inverse);
+        if (!inverse) {
+          throw new ModelContextError(
+            `models.${model.name}.relationships.${relationship.name}.inverse`,
+            `inverse relationship does not exist on "${target.name}"`,
+          );
+        }
+        if (inverse.target !== model.name || inverse.inverse !== relationship.name) {
+          throw new ModelContextError(
+            `models.${model.name}.relationships.${relationship.name}.inverse`,
+            "inverse relationship must point back to the source relationship",
+          );
+        }
+        if (inverse.type !== inverseTypes[relationship.type]) {
+          throw new ModelContextError(
+            `models.${model.name}.relationships.${relationship.name}.inverse`,
+            "relationship cardinality does not match its inverse",
+          );
+        }
+      }
+    }
+  }
+  return contexts;
 }

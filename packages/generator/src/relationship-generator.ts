@@ -1,7 +1,8 @@
-import type { ApplicationGraph, GraphNode } from "@mavibase/application-graph";
+import type { ApplicationGraph } from "@mavibase/application-graph";
 
 import type { GeneratedFile } from "./index.js";
 import { defineTemplate } from "./template.js";
+import { normalizeModelContexts } from "./model-context.js";
 
 export type RelationshipType = "one-to-one" | "one-to-many" | "many-to-one" | "many-to-many";
 
@@ -13,6 +14,10 @@ export interface RelationshipTemplateData {
   cardinality: "one" | "many";
   required: boolean;
   optional: boolean;
+  field?: string;
+  owner?: "source" | "target";
+  inverse?: string;
+  through?: string;
   foreignKey?: string;
   onDelete?: string;
   onUpdate?: string;
@@ -39,6 +44,18 @@ export const relationshipsTemplate = defineTemplate<RelationshipsTemplateData>(
             `cardinality: ${JSON.stringify(relationship.cardinality)}`,
             `required: ${relationship.required}`,
             `optional: ${relationship.optional}`,
+            ...(relationship.field === undefined
+              ? []
+              : [`field: ${JSON.stringify(relationship.field)}`]),
+            ...(relationship.owner === undefined
+              ? []
+              : [`owner: ${JSON.stringify(relationship.owner)}`]),
+            ...(relationship.inverse === undefined
+              ? []
+              : [`inverse: ${JSON.stringify(relationship.inverse)}`]),
+            ...(relationship.through === undefined
+              ? []
+              : [`through: ${JSON.stringify(relationship.through)}`]),
             ...(relationship.foreignKey === undefined
               ? []
               : [`foreignKey: ${JSON.stringify(relationship.foreignKey)}`]),
@@ -59,82 +76,29 @@ export const relationshipsTemplate = defineTemplate<RelationshipsTemplateData>(
   { name: "relationships" },
 );
 
-function nodeName(node: GraphNode): string | undefined {
-  const name = node.data?.["name"];
-  return typeof name === "string" && name.trim() ? name : undefined;
-}
-
-function relationshipType(value: unknown): RelationshipType | undefined {
-  return value === "one-to-one" ||
-    value === "one-to-many" ||
-    value === "many-to-one" ||
-    value === "many-to-many"
-    ? value
-    : undefined;
-}
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value : undefined;
-}
-
-function booleanValue(value: unknown): boolean | undefined {
-  return typeof value === "boolean" ? value : undefined;
-}
-
-function modelRelationships(
-  graph: ApplicationGraph,
-  model: GraphNode,
-  source: string,
-): RelationshipTemplateData[] {
-  return graph.edges
-    .filter((edge) => edge.from === model.id && edge.type === "has-relationship")
-    .map((edge) => graph.nodes.find((node) => node.id === edge.to))
-    .filter((node): node is GraphNode => node?.type === "relationship")
-    .map((node): RelationshipTemplateData | undefined => {
-      const name = nodeName(node);
-      const target = stringValue(node.data?.["model"]);
-      const type = relationshipType(node.data?.["type"]);
-
-      if (!name || !target || !type) return undefined;
-
-      const cardinality = type === "one-to-one" || type === "many-to-one" ? "one" : "many";
-      const required = booleanValue(node.data?.["required"]) ?? false;
-      const optional = booleanValue(node.data?.["optional"]) ?? !required;
-
-      const relationship: RelationshipTemplateData = {
-        name,
-        source,
-        target,
-        type,
-        cardinality,
-        required,
-        optional,
-      };
-
-      const foreignKey = stringValue(node.data?.["foreignKey"]);
-      const onDelete = stringValue(node.data?.["onDelete"]);
-      const onUpdate = stringValue(node.data?.["onUpdate"]);
-
-      if (foreignKey !== undefined) relationship.foreignKey = foreignKey;
-      if (onDelete !== undefined) relationship.onDelete = onDelete;
-      if (onUpdate !== undefined) relationship.onUpdate = onUpdate;
-
-      return relationship;
-    })
-    .filter((relationship): relationship is RelationshipTemplateData => relationship !== undefined)
-    .sort((left, right) => left.name.localeCompare(right.name));
-}
-
 export function relationshipTemplateData(graph: ApplicationGraph): RelationshipsTemplateData {
   return {
-    models: graph.nodes
-      .filter((node) => node.type === "model")
-      .map((node) => {
-        const name = nodeName(node) ?? node.id;
-        return { name, relationships: modelRelationships(graph, node, name) };
-      })
-      .filter((model) => model.relationships.length > 0)
-      .sort((left, right) => left.name.localeCompare(right.name)),
+    models: normalizeModelContexts(graph)
+      .map((model) => ({
+        name: model.name,
+        relationships: model.relationships.map((relationship) => ({
+          name: relationship.name,
+          source: model.name,
+          target: relationship.target,
+          type: relationship.type,
+          cardinality: relationship.collection ? "many" : "one",
+          required: relationship.required,
+          optional: relationship.optional,
+          ...(relationship.field === undefined ? {} : { field: relationship.field }),
+          ...(relationship.owner === undefined ? {} : { owner: relationship.owner }),
+          ...(relationship.inverse === undefined ? {} : { inverse: relationship.inverse }),
+          ...(relationship.through === undefined ? {} : { through: relationship.through }),
+          ...(relationship.foreignKey === undefined ? {} : { foreignKey: relationship.foreignKey }),
+          ...(relationship.onDelete === undefined ? {} : { onDelete: relationship.onDelete }),
+          ...(relationship.onUpdate === undefined ? {} : { onUpdate: relationship.onUpdate }),
+        } satisfies RelationshipTemplateData)),
+      }))
+      .filter((model) => model.relationships.length > 0),
   };
 }
 

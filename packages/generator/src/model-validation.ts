@@ -230,6 +230,86 @@ export function validateModelGraph(graph: ApplicationGraph): ModelValidationIssu
           message: "A relationship cannot be both required and optional.",
         });
       }
+      if (data["owner"] !== undefined && data["owner"] !== "source" && data["owner"] !== "target") {
+        issues.push({
+          category: "relationship",
+          path: `${path}.owner`,
+          message: "Relationship owner must be source or target.",
+        });
+      }
+      for (const key of ["onDelete", "onUpdate"] as const) {
+        if (
+          data[key] !== undefined &&
+          !["cascade", "restrict", "set-null", "no-action"].includes(String(data[key]))
+        ) {
+          issues.push({
+            category: "relationship",
+            path: `${path}.${key}`,
+            message: `Relationship ${key} must be a valid referential action.`,
+          });
+        }
+      }
+      if (type === "many-to-many") {
+        if (typeof data["through"] !== "string" || !modelNames.has(data["through"])) {
+          issues.push({
+            category: "relationship",
+            path: `${path}.through`,
+            message: "Many-to-many relationships must reference an explicit join model.",
+          });
+        }
+      }
+    }
+  }
+
+  const inverseTypes: Record<string, string> = {
+    "one-to-one": "one-to-one",
+    "one-to-many": "many-to-one",
+    "many-to-one": "one-to-many",
+    "many-to-many": "many-to-many",
+  };
+  for (const model of models) {
+    const source = nodeName(model);
+    if (!source) continue;
+    const relationships = graph.edges
+      .filter((edge) => edge.from === model.id && edge.type === "has-relationship")
+      .map((edge) => graph.nodes.find((node) => node.id === edge.to))
+      .filter((node): node is GraphNode => node?.type === "relationship");
+    for (const relationship of relationships) {
+      const data = record(relationship.data);
+      const inverse = data["inverse"];
+      if (typeof inverse !== "string") continue;
+      const targetName = data["model"];
+      const targetModel = models.find((candidate) => nodeName(candidate) === targetName);
+      const targetRelationship = targetModel
+        ? graph.edges
+            .filter((edge) => edge.from === targetModel.id && edge.type === "has-relationship")
+            .map((edge) => graph.nodes.find((node) => node.id === edge.to))
+            .find((node) => node?.type === "relationship" && node.data?.["name"] === inverse)
+        : undefined;
+      const path = `models.${source}.relationships.${String(data["name"] ?? relationship.id)}.inverse`;
+      if (!targetRelationship) {
+        issues.push({
+          category: "relationship",
+          path,
+          message: "Inverse relationship must exist on the target model.",
+        });
+        continue;
+      }
+      const targetData = record(targetRelationship.data);
+      if (targetData["model"] !== source || targetData["inverse"] !== data["name"]) {
+        issues.push({
+          category: "relationship",
+          path,
+          message: "Inverse relationship must point back to the source relationship.",
+        });
+      }
+      if (inverseTypes[String(data["type"])] !== targetData["type"]) {
+        issues.push({
+          category: "relationship",
+          path,
+          message: "Relationship cardinality does not match its inverse.",
+        });
+      }
     }
   }
 

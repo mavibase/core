@@ -42,4 +42,43 @@ describe("normalized model context", () => {
     ]);
     expect(modelTemplateData(graph)).toEqual(typeTemplateData(graph));
   });
+
+  it("validates explicit inverse cardinality and join-model semantics", () => {
+    const graph = buildGraph({
+      name: "relationship-context-app",
+      version: "1.0.0",
+      environment: "test",
+      stack: { language: "typescript", runtime: "node" },
+      models: [
+        {
+          id: "user",
+          name: "User",
+          relationships: {
+            posts: { type: "one-to-many", model: "Post", inverse: "author" },
+          },
+        },
+        {
+          id: "post",
+          name: "Post",
+          relationships: {
+            author: { type: "many-to-one", model: "User", inverse: "posts" },
+          },
+        },
+      ],
+    });
+
+    expect(normalizeModelContexts(graph)[0]?.relationships[0]?.inverse).toBe("posts");
+
+    const manyToMany = buildGraph({
+      name: "many-to-many-context-app",
+      version: "1.0.0",
+      environment: "test",
+      stack: { language: "typescript", runtime: "node" },
+      models: [
+        { id: "user", name: "User", relationships: { tags: { type: "many-to-many", model: "Tag" } } },
+        { id: "tag", name: "Tag" },
+      ],
+    });
+    expect(() => normalizeModelContexts(manyToMany)).toThrow("explicit join model");
+  });
 });
