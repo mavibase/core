@@ -272,5 +272,6 @@ export * from "./openapi-generator.js";
 export * from "./schema-normalizer.js";
 export * from "./schema-diff.js";
 export * from "./database-generator.js";
+export * from "./model-context.js";
 export * from "./generation-plan.js";
 export * from "./generation-manifest.js";

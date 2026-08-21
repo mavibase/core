@@ -1,9 +1,9 @@
-import type { FieldDefinition, SemanticType } from "@mavibase/core";
-import type { ApplicationGraph, GraphNode } from "@mavibase/application-graph";
+import type { SemanticType } from "@mavibase/core";
+import type { ApplicationGraph } from "@mavibase/application-graph";
 
 import type { GeneratedFile } from "./index.js";
 import { defineTemplate } from "./template.js";
-import { requireGeneratorFieldContext } from "./field-context.js";
+import { normalizeModelContexts } from "./model-context.js";
 
 export interface ModelFieldTemplateData {
   name: string;
@@ -99,145 +99,54 @@ export const modelMetadataTemplate = defineTemplate<ModelMetadataTemplateData>(
   { name: "model-metadata" },
 );
 
-function nodeName(node: GraphNode): string | undefined {
-  const name = node.data?.["name"];
-  return typeof name === "string" && name.trim() ? name : undefined;
-}
-
-function modelFields(graph: ApplicationGraph, model: GraphNode): ModelFieldTemplateData[] {
-  const fields = graph.edges
-    .filter((edge) => edge.from === model.id && edge.type === "has-field")
-    .map((edge) => graph.nodes.find((node) => node.id === edge.to))
-    .filter((node): node is GraphNode => node?.type === "field")
-    .map((node) => {
-      const fieldName = nodeName(node);
-      if (!fieldName) {
-        return undefined;
-      }
-
-      const context = requireGeneratorFieldContext(
-        {
-          type: node.data?.["type"] as SemanticType,
-          ...(node.data?.["modifiers"] === undefined
-            ? {}
-            : { modifiers: node.data["modifiers"] as NonNullable<FieldDefinition["modifiers"]> }),
-          ...(node.data?.["validation"] === undefined
-            ? {}
-            : { validation: node.data["validation"] as string }),
-        },
-        `models.${nodeName(model) ?? model.id}.fields.${fieldName}`,
-      );
-      return {
-        name: fieldName,
-        type: context.typescriptType,
-        optional: context.optional,
-        nullable: context.nullable,
-        readonly: context.readOnly,
-      } satisfies ModelFieldTemplateData;
-    })
-    .filter((field): field is ModelFieldTemplateData => field !== undefined);
-
-  const relationships = graph.edges
-    .filter((edge) => edge.from === model.id && edge.type === "has-relationship")
-    .map((edge) => graph.nodes.find((node) => node.id === edge.to))
-    .filter((node): node is GraphNode => node?.type === "relationship")
-    .map((node): ModelFieldTemplateData | undefined => {
-      const name = nodeName(node);
-      const target = node.data?.["model"];
-      const relationshipType = node.data?.["type"];
-
-      if (!name || typeof target !== "string" || !target.trim()) {
-        return undefined;
-      }
-
-      const isCollection =
-        relationshipType === "one-to-many" || relationshipType === "many-to-many";
-      return {
-        name,
-        type: isCollection ? `${target}[]` : target,
+export function modelTemplateData(graph: ApplicationGraph): ModelsTemplateData {
+  const models = normalizeModelContexts(graph).map((model) => ({
+    name: model.name,
+    fields: [
+      ...model.fields.map((field) => ({
+        name: field.name,
+        type: field.typescriptType,
+        optional: field.optional,
+        nullable: field.nullable,
+        readonly: field.readOnly,
+      })),
+      ...model.relationships.map((relationship) => ({
+        name: relationship.name,
+        type: relationship.collection ? `${relationship.target}[]` : relationship.target,
         optional: false,
         nullable: false,
         readonly: false,
-      };
-    })
-    .filter((field): field is ModelFieldTemplateData => field !== undefined);
-
-  return [...fields, ...relationships].sort((left, right) => left.name.localeCompare(right.name));
-}
-
-export function modelTemplateData(graph: ApplicationGraph): ModelsTemplateData {
-  const models = graph.nodes
-    .filter((node) => node.type === "model")
-    .map((node) => {
-      const name = nodeName(node) ?? node.id;
-      return { name, fields: modelFields(graph, node) } satisfies ModelTemplateData;
-    })
-    .sort((left, right) => left.name.localeCompare(right.name));
+      })),
+    ].sort((left, right) => left.name.localeCompare(right.name)),
+  } satisfies ModelTemplateData));
 
   return { models };
 }
 
-function modelMetadataFields(
-  graph: ApplicationGraph,
-  model: GraphNode,
-): Record<string, ModelMetadataFieldTemplateData> {
-  const fields = graph.edges
-    .filter((edge) => edge.from === model.id && edge.type === "has-field")
-    .map((edge) => graph.nodes.find((node) => node.id === edge.to))
-    .filter((node): node is GraphNode => node?.type === "field")
-    .map((node): readonly [string, ModelMetadataFieldTemplateData] | undefined => {
-      const name = nodeName(node);
-      if (!name) return undefined;
-      const context = requireGeneratorFieldContext(
-        {
-          type: node.data?.["type"] as SemanticType,
-          ...(node.data?.["modifiers"] === undefined
-            ? {}
-            : { modifiers: node.data["modifiers"] as NonNullable<FieldDefinition["modifiers"]> }),
-          ...(node.data?.["validation"] === undefined
-            ? {}
-            : { validation: node.data["validation"] as string }),
-        },
-        `models.${nodeName(model) ?? model.id}.fields.${name}`,
-      );
-      const rawModifiers =
-        node.data?.["modifiers"] && typeof node.data["modifiers"] === "object"
-          ? (node.data["modifiers"] as Record<string, unknown>)
-          : {};
-      const metadata: ModelMetadataFieldTemplateData = {
-        type: context.semanticType,
-        required: rawModifiers.required === true,
-        optional: context.optional,
-        nullable: context.nullable,
-        unique: rawModifiers.unique === true,
-        indexed: rawModifiers.indexed === true,
-        primary: rawModifiers.primary === true,
-        generated: rawModifiers.generated === true,
-        readOnly: context.readOnly,
-        writeOnly: context.writeOnly,
-        ...(rawModifiers.default === undefined
-          ? {}
-          : { defaultValue: rawModifiers.default }),
-      };
-      return [name, metadata];
-    })
-    .filter(
-      (entry): entry is readonly [string, ModelMetadataFieldTemplateData] => entry !== undefined,
-    )
-    .sort(([left], [right]) => left.localeCompare(right));
-
-  return Object.fromEntries(fields);
-}
-
 export function modelMetadataTemplateData(graph: ApplicationGraph): ModelMetadataTemplateData {
   return {
-    models: graph.nodes
-      .filter((node) => node.type === "model")
-      .map((node) => {
-        const name = nodeName(node) ?? node.id;
-        return { name, table: name, fields: modelMetadataFields(graph, node) };
-      })
-      .sort((left, right) => left.name.localeCompare(right.name)),
+    models: normalizeModelContexts(graph).map((model) => ({
+      name: model.name,
+      table: model.table,
+      fields: Object.fromEntries(
+        model.fields.map((field) => [
+          field.name,
+          {
+            type: field.semanticType,
+            required: field.required,
+            optional: field.optional,
+            nullable: field.nullable,
+            unique: field.unique,
+            indexed: field.indexed,
+            primary: field.primary,
+            generated: field.generated,
+            readOnly: field.readOnly,
+            writeOnly: field.writeOnly,
+            ...(field.defaultValue === undefined ? {} : { defaultValue: field.defaultValue }),
+          } satisfies ModelMetadataFieldTemplateData,
+        ]),
+      ),
+    })),
   };
 }
 

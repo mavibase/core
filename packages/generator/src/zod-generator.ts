@@ -1,13 +1,14 @@
-import type { FieldDefinition, SemanticType } from "@mavibase/core";
-import type { ApplicationGraph, GraphNode } from "@mavibase/application-graph";
+import type { ApplicationGraph } from "@mavibase/application-graph";
 
 import type { GeneratedFile } from "./index.js";
 import { defineTemplate } from "./template.js";
+import { FieldContextError } from "./field-context.js";
 import {
-  FieldContextError,
-  requireGeneratorFieldContext,
-  type GeneratorFieldContext,
-} from "./field-context.js";
+  ModelContextError,
+  normalizeModelContexts,
+  type NormalizedModelFieldContext,
+  type NormalizedModelRelationshipContext,
+} from "./model-context.js";
 
 export interface ZodFieldTemplateData {
   name: string;
@@ -71,11 +72,6 @@ function propertyName(name: string): string {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) ? name : JSON.stringify(name);
 }
 
-function nodeName(node: GraphNode): string | undefined {
-  const name = node.data?.["name"];
-  return typeof name === "string" && name.trim() ? name : undefined;
-}
-
 function defaultLiteral(value: unknown, path: string): string {
   if (value === undefined) {
     throw new ZodGenerationError({
@@ -106,31 +102,57 @@ function defaultLiteral(value: unknown, path: string): string {
   }
 }
 
-function fieldSchema(node: GraphNode, modelName: string): ZodFieldTemplateData | undefined {
-  const name = nodeName(node);
-  if (!name) {
-    return undefined;
+function fieldSchema(field: NormalizedModelFieldContext, modelName: string): ZodFieldTemplateData {
+  let schema = field.zodExpression;
+
+  if (field.optional) {
+    schema += ".optional()";
   }
 
-  let context: GeneratorFieldContext;
+  if (field.nullable) {
+    schema += ".nullable()";
+  }
+
+  if (field.defaultValue !== undefined) {
+    schema += `.default(${defaultLiteral(field.defaultValue, `models.${modelName}.fields.${field.name}.default`)})`;
+  }
+
+  return { name: field.name, schema };
+}
+
+function relationshipSchema(
+  relationship: NormalizedModelRelationshipContext,
+): ZodFieldTemplateData {
+  const schema = `z.lazy(() => ${relationship.target}Schema)`;
+  return {
+    name: relationship.name,
+    schema: relationship.collection ? `z.array(${schema})` : schema,
+  };
+}
+
+export function zodTemplateData(graph: ApplicationGraph): ZodSchemasTemplateData {
   try {
-    context = requireGeneratorFieldContext(
-      {
-        type: node.data?.["type"] as SemanticType,
-        ...(node.data?.["modifiers"] === undefined
-          ? {}
-          : { modifiers: node.data["modifiers"] as NonNullable<FieldDefinition["modifiers"]> }),
-        ...(node.data?.["validation"] === undefined
-          ? {}
-          : { validation: node.data["validation"] as string }),
-      },
-      `models.${modelName}.fields.${name}`,
-    );
+    const models = normalizeModelContexts(graph).map((model) => ({
+      name: model.name,
+      fields: model.fields.map((field) => fieldSchema(field, model.name)),
+      relationships: model.relationships.map((relationship) => relationshipSchema(relationship)),
+    } satisfies ZodModelTemplateData));
+    return { models };
   } catch (error) {
+    if (error instanceof ModelContextError) {
+      throw new ZodGenerationError(
+        {
+          path: error.path,
+          reason: error.message,
+          recommendation: "Correct the model context before generating Zod schemas.",
+        },
+        error,
+      );
+    }
     if (error instanceof FieldContextError) {
       throw new ZodGenerationError(
         {
-          path: `models.${modelName}.fields.${name}.type`,
+          path: error.diagnostics[0]?.path ?? "model.field",
           reason: "unsupported field type",
           recommendation: "Use a field type supported by the Mavibase field system.",
         },
@@ -139,90 +161,6 @@ function fieldSchema(node: GraphNode, modelName: string): ZodFieldTemplateData |
     }
     throw error;
   }
-  const fieldModifiers =
-    node.data?.["modifiers"] && typeof node.data["modifiers"] === "object"
-      ? (node.data["modifiers"] as Record<string, unknown>)
-      : {};
-  let schema = context.zodExpression;
-
-  if (fieldModifiers.optional === true) {
-    schema += ".optional()";
-  }
-
-  if (fieldModifiers.nullable === true) {
-    schema += ".nullable()";
-  }
-
-  if (Object.prototype.hasOwnProperty.call(fieldModifiers, "default")) {
-    schema += `.default(${defaultLiteral(fieldModifiers.default, `models.${modelName}.fields.${name}.default`)})`;
-  }
-
-  return { name, schema };
-}
-
-function relationshipSchema(
-  node: GraphNode,
-  modelName: string,
-): ZodFieldTemplateData | undefined {
-  const name = nodeName(node);
-  if (!name) {
-    return undefined;
-  }
-
-  const target = node.data?.["model"];
-  if (typeof target !== "string" || !target.trim()) {
-    throw new ZodGenerationError({
-      path: `models.${modelName}.relationships.${name}.model`,
-      reason: "relationship target is missing",
-      recommendation: "Define a target model for the relationship.",
-    });
-  }
-
-  const type = node.data?.["type"];
-  const collection = type === "one-to-many" || type === "many-to-many";
-  if (
-    type !== "one-to-one" &&
-    type !== "one-to-many" &&
-    type !== "many-to-one" &&
-    type !== "many-to-many"
-  ) {
-    throw new ZodGenerationError({
-      path: `models.${modelName}.relationships.${name}.type`,
-      reason: `unsupported relationship type "${String(type)}"`,
-      recommendation: "Use a relationship type supported by the Mavibase relationship system.",
-    });
-  }
-
-  const schema = `z.lazy(() => ${target}Schema)`;
-  return { name, schema: collection ? `z.array(${schema})` : schema };
-}
-
-export function zodTemplateData(graph: ApplicationGraph): ZodSchemasTemplateData {
-  const models = graph.nodes
-    .filter((node) => node.type === "model")
-    .map((model) => {
-      const modelName = nodeName(model) ?? model.id;
-      const fields = graph.edges
-        .filter((edge) => edge.from === model.id && edge.type === "has-field")
-        .map((edge) => graph.nodes.find((node) => node.id === edge.to))
-        .filter((node): node is GraphNode => node?.type === "field")
-        .map((node) => fieldSchema(node, modelName))
-        .filter((field): field is ZodFieldTemplateData => field !== undefined)
-        .sort((left, right) => left.name.localeCompare(right.name));
-
-      const relationships = graph.edges
-        .filter((edge) => edge.from === model.id && edge.type === "has-relationship")
-        .map((edge) => graph.nodes.find((node) => node.id === edge.to))
-        .filter((node): node is GraphNode => node?.type === "relationship")
-        .map((node) => relationshipSchema(node, modelName))
-        .filter((relationship): relationship is ZodFieldTemplateData => relationship !== undefined)
-        .sort((left, right) => left.name.localeCompare(right.name));
-
-      return { name: modelName, fields, relationships } satisfies ZodModelTemplateData;
-    })
-    .sort((left, right) => left.name.localeCompare(right.name));
-
-  return { models };
 }
 
 export function generateZodSchemas(graph: ApplicationGraph): GeneratedFile | undefined {
