@@ -13,6 +13,7 @@ import { generateRouteValidation } from "./route-validation-generator.js";
 import { generateRouteResponses } from "./route-response-generator.js";
 import { generateRouteOutputValidation } from "./route-output-validation-generator.js";
 import { generateRouteHandlers, type HandlerFramework } from "./route-handler-generator.js";
+import { generateRouteRegistration } from "./route-registration-generator.js";
 import { generateRouteMiddleware } from "./route-middleware-generator.js";
 import { generateApiErrors } from "./api-error-generator.js";
 import { generateOpenApiDocument } from "./openapi-generator.js";
@@ -71,6 +72,7 @@ function structuredArtifact(artifact: GeneratedFile): GeneratedFile {
     "route-responses.ts": "routes/responses.ts",
     "route-output-validation.ts": "routes/output-validation.ts",
     "route-handlers.ts": "controllers/index.ts",
+    "route-registration.ts": "routes/registration.ts",
     "route-middleware.ts": "middleware/index.ts",
     "api-errors.ts": "errors/index.ts",
     "openapi.ts": "docs/openapi.ts",
@@ -96,6 +98,9 @@ function structuredArtifact(artifact: GeneratedFile): GeneratedFile {
   }
   if (artifact.path === "route-handlers.ts") {
     content = content.replaceAll('from "./api-errors.js"', 'from "../errors/index.js"');
+  }
+  if (artifact.path === "route-registration.ts") {
+    content = content.replaceAll('from "./route-handlers.js"', 'from "../controllers/index.js"');
   }
 
   return { path, content };
@@ -182,6 +187,12 @@ export function generate(graph: ApplicationGraph, options?: GenerateOptions): Ge
     artifacts.push(routeHandlersFile);
   }
 
+  const routeRegistrationFile = generateRouteRegistration(graph, options?.framework);
+
+  if (routeRegistrationFile) {
+    artifacts.push(routeRegistrationFile);
+  }
+
   const routeMiddlewareFile = generateRouteMiddleware(graph);
 
   if (routeMiddlewareFile) {
@@ -266,6 +277,7 @@ export * from "./route-validation-generator.js";
 export * from "./route-response-generator.js";
 export * from "./route-output-validation-generator.js";
 export * from "./route-handler-generator.js";
+export * from "./route-registration-generator.js";
 export * from "./route-middleware-generator.js";
 export * from "./api-error-generator.js";
 export * from "./openapi-generator.js";
