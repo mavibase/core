@@ -21,9 +21,57 @@ describe("route handler generator", () => {
     const artifact = first.artifacts.find((candidate) => candidate.path === "route-handlers.ts");
 
     expect(first).toEqual(second);
-    expect(artifact?.content).toContain('import type { Request, Response } from "express";');
-    expect(artifact?.content).toContain("export async function UsersCreateHandler");
-    expect(artifact?.content).toContain("export async function UsersListHandler");
+    expect(artifact?.content).toContain(
+      'import type { NextFunction, Request, Response } from "express";',
+    );
+    expect(artifact?.content).toContain("export interface UsersCreateDependencies");
+    expect(artifact?.content).toContain("export function createUsersCreateHandler");
+    expect(artifact?.content).toContain("deps.execute");
+    expect(artifact?.content).toContain('throw new Error("Implement users.create service.")');
+    expect(artifact?.content).not.toContain("notImplementedError");
+  });
+
+  it("passes the configured success status to the dependency-injected handler", () => {
+    const app = defineApp({
+      name: "api",
+      version: "1.0.0",
+      environment: "development",
+      stack: { language: "typescript", runtime: "node", backend: { framework: "express" } },
+      routes: [
+        defineRoute({
+          name: "users.create",
+          method: "POST",
+          path: "/users",
+          responses: [{ status: 201 }],
+        }),
+      ],
+    });
+
+    const artifact = generateFromDefinition(app).artifacts.find(
+      (candidate) => candidate.path === "route-handlers.ts",
+    );
+
+    expect(artifact?.content).toContain("response.status(201).json(result);");
+    expect(artifact?.content).toContain(
+      "params: request.params as Record<string, unknown>, query: request.query as Record<string, unknown>",
+    );
+  });
+
+  it("forwards dependency failures to the Express error boundary", () => {
+    const app = defineApp({
+      name: "api",
+      version: "1.0.0",
+      environment: "development",
+      stack: { language: "typescript", runtime: "node", backend: { framework: "express" } },
+      routes: [defineRoute({ name: "health", method: "GET", path: "/health" })],
+    });
+
+    const artifact = generateFromDefinition(app).artifacts.find(
+      (candidate) => candidate.path === "route-handlers.ts",
+    );
+
+    expect(artifact?.content).toContain("catch (error)");
+    expect(artifact?.content).toContain("next(error);");
   });
 
   it("supports an explicit Fastify framework", () => {

@@ -6,9 +6,19 @@ import { defineTemplate } from "./template.js";
 export const handlerFrameworks = ["express", "fastify", "hono", "nestjs"] as const;
 export type HandlerFramework = (typeof handlerFrameworks)[number];
 
+interface RouteHandlerData {
+  name: string;
+  handlerName: string;
+  dependenciesName: string;
+  inputName: string;
+  method: string;
+  path: string;
+  responseStatus: number;
+}
+
 export interface RouteHandlerTemplateData {
   framework: HandlerFramework;
-  routes: { name: string; handlerName: string; method: string; path: string }[];
+  routes: RouteHandlerData[];
 }
 
 export class RouteHandlerGenerationError extends Error {
@@ -25,13 +35,31 @@ function nodeValue(node: GraphNode, key: string): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
 }
 
-function handlerName(name: string): string {
+function symbolName(name: string, suffix: string): string {
   const value = name
     .split(/[^A-Za-z0-9_$]+/)
     .filter(Boolean)
-    .map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
+    .map((part) => (part[0]?.toUpperCase() ?? "") + part.slice(1))
     .join("");
-  return `${value || "Route"}Handler`;
+  return (value || "Route") + suffix;
+}
+
+function handlerName(name: string): string {
+  return symbolName(name, "Handler");
+}
+
+function responseStatus(node: GraphNode): number {
+  const responses = node.data?.["responses"];
+  if (!Array.isArray(responses)) return 200;
+  const statuses = responses
+    .filter((value): value is Record<string, unknown> => Boolean(value && typeof value === "object"))
+    .map((value) => value["status"])
+    .filter(
+      (value): value is number =>
+        typeof value === "number" && Number.isInteger(value) && value >= 200 && value <= 299,
+    )
+    .sort((left, right) => left - right);
+  return statuses[0] ?? 200;
 }
 
 function frameworkFromGraph(graph: ApplicationGraph): HandlerFramework | undefined {
@@ -46,9 +74,7 @@ function frameworkFromGraph(graph: ApplicationGraph): HandlerFramework | undefin
     : undefined;
 }
 
-function routeData(
-  graph: ApplicationGraph,
-): { name: string; handlerName: string; method: string; path: string }[] {
+function routeData(graph: ApplicationGraph): RouteHandlerData[] {
   return graph.nodes
     .filter((node) => node.type === "route")
     .map((node) => {
@@ -56,64 +82,109 @@ function routeData(
       return {
         name,
         handlerName: handlerName(name),
+        dependenciesName: symbolName(name, "Dependencies"),
+        inputName: symbolName(name, "Input"),
         method: nodeValue(node, "method") ?? "GET",
         path: nodeValue(node, "path") ?? "/",
+        responseStatus: responseStatus(node),
       };
     })
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
-function expressTemplate(data: RouteHandlerTemplateData): string {
-  const lines = [
-    'import type { Request, Response } from "express";',
-    'import { notImplementedError } from "./api-errors.js";',
+function defaultDependency(route: RouteHandlerData): string[] {
+  return [
+    "export const " + route.handlerName + " = create" + route.handlerName + "({",
+    "  async execute() {",
+    "    throw new Error(" + JSON.stringify("Implement " + route.name + " service.") + ");",
+    "  },",
+    "});",
     "",
   ];
+}
+
+function commonTypes(lines: string[]): void {
+  lines.push(
+    "export interface RequestContext {",
+    "  request: unknown;",
+    "  response: unknown;",
+    "}",
+    "",
+  );
+}
+
+function inputAndDependencies(lines: string[], route: RouteHandlerData): void {
+  lines.push(
+    "export interface " + route.inputName + " {",
+    "  params: Record<string, unknown>;",
+    "  query: Record<string, unknown>;",
+    "  headers: Record<string, unknown>;",
+    "  body: unknown;",
+    "}",
+    "",
+    "export interface " + route.dependenciesName + " {",
+    "  execute(input: " + route.inputName + ", context: RequestContext): Promise<unknown>;",
+    "}",
+    "",
+  );
+}
+
+function expressTemplate(data: RouteHandlerTemplateData): string {
+  const lines = ['import type { NextFunction, Request, Response } from "express";', ""];
+  commonTypes(lines);
   for (const route of data.routes) {
+    inputAndDependencies(lines, route);
     lines.push(
-      `export async function ${route.handlerName}(request: Request, response: Response): Promise<void> {`,
-      "  void request;",
-      "  const error = notImplementedError();",
-      "  response.status(error.status).json(error);",
+      "export function create" + route.handlerName + "(deps: " + route.dependenciesName + ") {",
+      "  return async function " + route.handlerName + "(request: Request, response: Response, next: NextFunction): Promise<void> {",
+      "    try {",
+      "      const result = await deps.execute({ params: request.params as Record<string, unknown>, query: request.query as Record<string, unknown>, headers: request.headers as Record<string, unknown>, body: request.body }, { request, response });",
+      "      response.status(" + route.responseStatus + ").json(result);",
+      "    } catch (error) {",
+      "      next(error);",
+      "    }",
+      "  };",
       "}",
       "",
+      ...defaultDependency(route),
     );
   }
   return lines.join("\n");
 }
 
 function fastifyTemplate(data: RouteHandlerTemplateData): string {
-  const lines = [
-    'import type { FastifyReply, FastifyRequest } from "fastify";',
-    'import { notImplementedError } from "./api-errors.js";',
-    "",
-  ];
+  const lines = ['import type { FastifyReply, FastifyRequest } from "fastify";', ""];
+  commonTypes(lines);
   for (const route of data.routes) {
+    inputAndDependencies(lines, route);
     lines.push(
-      `export async function ${route.handlerName}(request: FastifyRequest, reply: FastifyReply): Promise<void> {`,
-      "  void request;",
-      "  const error = notImplementedError();",
-      "  await reply.code(error.status).send(error);",
+      "export function create" + route.handlerName + "(deps: " + route.dependenciesName + ") {",
+      "  return async function " + route.handlerName + "(request: FastifyRequest, reply: FastifyReply): Promise<void> {",
+      "    const result = await deps.execute({ params: request.params as Record<string, unknown>, query: request.query as Record<string, unknown>, headers: request.headers as Record<string, unknown>, body: request.body }, { request, response: reply });",
+      "    await reply.code(" + route.responseStatus + ").send(result);",
+      "  };",
       "}",
       "",
+      ...defaultDependency(route),
     );
   }
   return lines.join("\n");
 }
 
 function honoTemplate(data: RouteHandlerTemplateData): string {
-  const lines = [
-    'import type { Context } from "hono";',
-    'import { notImplementedError } from "./api-errors.js";',
-    "",
-  ];
+  const lines = ['import type { Context } from "hono";', ""];
+  commonTypes(lines);
   for (const route of data.routes) {
+    inputAndDependencies(lines, route);
     lines.push(
-      `export async function ${route.handlerName}(context: Context): Promise<Response> {`,
-      "  const error = notImplementedError();",
-      "  return context.json(error, 501);",
+      "export function create" + route.handlerName + "(deps: " + route.dependenciesName + ") {",
+      "  return async function " + route.handlerName + "(context: Context): Promise<Response> {",
+      "    const result = await deps.execute({ params: context.req.param(), query: context.req.query(), headers: context.req.header(), body: await context.req.json().catch(() => undefined) }, { request: context.req.raw, response: context });",
+      "    return context.json(result, " + route.responseStatus + ");",
+      "  };",
       "}",
       "",
+      ...defaultDependency(route),
     );
   }
   return lines.join("\n");
@@ -121,21 +192,27 @@ function honoTemplate(data: RouteHandlerTemplateData): string {
 
 function nestjsTemplate(data: RouteHandlerTemplateData): string {
   const decorators = [...new Set(data.routes.map((route) => route.method.toLowerCase()))]
-    .map((method) => method[0]?.toUpperCase() + method.slice(1))
+    .map((method) => (method[0]?.toUpperCase() ?? "") + method.slice(1))
     .sort();
   const lines = [
-    `import { Controller, ${decorators.join(", ")} } from "@nestjs/common";`,
-    'import { notImplementedError } from "./api-errors.js";',
+    "import { Controller, " + decorators.join(", ") + " } from \"@nestjs/common\";",
+    "",
+    "export interface RequestContext { request: unknown; response: unknown; }",
+    "export interface MavibaseControllerDependencies {",
+    "  execute(input: Record<string, unknown>, context: RequestContext): Promise<unknown>;",
+    "}",
     "",
     "@Controller()",
     "export class MavibaseController {",
+    "  constructor(private readonly deps: MavibaseControllerDependencies) {}",
+    "",
   ];
   for (const route of data.routes) {
-    const decorator = route.method[0]?.toUpperCase() + route.method.slice(1).toLowerCase();
+    const decorator = (route.method[0]?.toUpperCase() ?? "") + route.method.slice(1).toLowerCase();
     lines.push(
-      `  @${decorator}(${JSON.stringify(route.path)})`,
-      `  async ${route.handlerName}(): Promise<ReturnType<typeof notImplementedError>> {`,
-      "    return notImplementedError();",
+      "  @" + decorator + "(" + JSON.stringify(route.path) + ")",
+      "  async " + route.handlerName + "(): Promise<unknown> {",
+      "    return this.deps.execute({ params: {}, query: {}, headers: {}, body: undefined }, { request: undefined, response: undefined });",
       "  }",
       "",
     );
@@ -163,7 +240,7 @@ export function routeHandlerTemplateData(
   const selectedFramework = framework ?? frameworkFromGraph(graph);
   if (selectedFramework === undefined) return undefined;
   if (!handlerFrameworks.includes(selectedFramework)) {
-    throw new RouteHandlerGenerationError(`Unsupported handler framework: "${selectedFramework}".`);
+    throw new RouteHandlerGenerationError("Unsupported handler framework: \"" + selectedFramework + "\".");
   }
   return { framework: selectedFramework, routes };
 }
