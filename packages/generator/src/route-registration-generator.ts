@@ -98,8 +98,14 @@ function routeData(graph: ApplicationGraph): RegistrationRoute[] {
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
-function middlewareIds(route: RegistrationRoute): string {
-  return JSON.stringify(route.middleware);
+function middlewareResolverName(route: RegistrationRoute): string {
+  return "resolve" + symbolName(route.name, "Middleware");
+}
+
+function middlewareExpression(route: RegistrationRoute, typeName: string): string {
+  return route.middleware.length === 0
+    ? "[]"
+    : middlewareResolverName(route) + "<" + typeName + ">(dependencies.middleware)";
 }
 
 function expressTemplate(data: RouteRegistrationTemplateData): string {
@@ -114,6 +120,14 @@ function expressTemplate(data: RouteRegistrationTemplateData): string {
         route.dependenciesName +
         ' } from "./route-handlers.js";',
     ),
+    ...data.routes
+      .filter((route) => route.middleware.length > 0)
+      .map(
+        (route) =>
+          'import { ' +
+          middlewareResolverName(route) +
+          ' } from "./route-middleware.js";',
+      ),
     "",
     "export interface RouteRegistrationDependencies {",
     ...data.routes.map(
@@ -128,17 +142,6 @@ function expressTemplate(data: RouteRegistrationTemplateData): string {
     "  errorHandler?: ErrorRequestHandler;",
     "}",
     "",
-    "function routeMiddleware(",
-    "  dependencies: RouteRegistrationDependencies,",
-    "  ids: readonly string[],",
-    "): RequestHandler[] {",
-    "  return ids.map((id) => {",
-    "    const middleware = dependencies.middleware?.[id];",
-    "    if (!middleware) throw new Error(\"Missing route middleware: \" + id);",
-    "    return middleware;",
-    "  });",
-    "}",
-    "",
     "export function registerRoutes(",
     "  app: Express,",
     "  dependencies: RouteRegistrationDependencies,",
@@ -150,9 +153,9 @@ function expressTemplate(data: RouteRegistrationTemplateData): string {
         route.method.toLowerCase() +
         "(" +
         JSON.stringify(route.path) +
-        ", ...routeMiddleware(dependencies, " +
-        middlewareIds(route) +
-        "), create" +
+        ", ..." +
+        middlewareExpression(route, "RequestHandler") +
+        ", create" +
         route.handlerName +
         "(dependencies." +
         dependencyProperty(route.name) +
@@ -179,6 +182,14 @@ function fastifyTemplate(data: RouteRegistrationTemplateData): string {
         route.dependenciesName +
         ' } from "./route-handlers.js";',
     ),
+    ...data.routes
+      .filter((route) => route.middleware.length > 0)
+      .map(
+        (route) =>
+          'import { ' +
+          middlewareResolverName(route) +
+          ' } from "./route-middleware.js";',
+      ),
     "",
     "export interface RouteRegistrationDependencies {",
     ...data.routes.map(
@@ -193,17 +204,6 @@ function fastifyTemplate(data: RouteRegistrationTemplateData): string {
     "  errorHandler?: (error: Error, request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;",
     "}",
     "",
-    "function routeMiddleware(",
-    "  dependencies: RouteRegistrationDependencies,",
-    "  ids: readonly string[],",
-    "): preHandlerHookHandler[] {",
-    "  return ids.map((id) => {",
-    "    const middleware = dependencies.middleware?.[id];",
-    "    if (!middleware) throw new Error(\"Missing route middleware: \" + id);",
-    "    return middleware;",
-    "  });",
-    "}",
-    "",
     "export function registerRoutes(",
     "  app: FastifyInstance,",
     "  dependencies: RouteRegistrationDependencies,",
@@ -215,9 +215,9 @@ function fastifyTemplate(data: RouteRegistrationTemplateData): string {
         JSON.stringify(route.method) +
         ", url: " +
         JSON.stringify(route.path) +
-        ", preHandler: routeMiddleware(dependencies, " +
-        middlewareIds(route) +
-        "), handler: create" +
+        ", preHandler: " +
+        middlewareExpression(route, "preHandlerHookHandler") +
+        ", handler: create" +
         route.handlerName +
         "(dependencies." +
         dependencyProperty(route.name) +
@@ -245,6 +245,14 @@ function honoTemplate(data: RouteRegistrationTemplateData): string {
         route.dependenciesName +
         ' } from "./route-handlers.js";',
     ),
+    ...data.routes
+      .filter((route) => route.middleware.length > 0)
+      .map(
+        (route) =>
+          'import { ' +
+          middlewareResolverName(route) +
+          ' } from "./route-middleware.js";',
+      ),
     "",
     "export interface RouteRegistrationDependencies {",
     ...data.routes.map(
@@ -259,17 +267,6 @@ function honoTemplate(data: RouteRegistrationTemplateData): string {
     "  errorHandler?: Parameters<Hono[\"onError\"]>[0];",
     "}",
     "",
-    "function routeMiddleware(",
-    "  dependencies: RouteRegistrationDependencies,",
-    "  ids: readonly string[],",
-    "): MiddlewareHandler[] {",
-    "  return ids.map((id) => {",
-    "    const middleware = dependencies.middleware?.[id];",
-    "    if (!middleware) throw new Error(\"Missing route middleware: \" + id);",
-    "    return middleware;",
-    "  });",
-    "}",
-    "",
     "export function registerRoutes(",
     "  app: Hono,",
     "  dependencies: RouteRegistrationDependencies,",
@@ -281,9 +278,9 @@ function honoTemplate(data: RouteRegistrationTemplateData): string {
         JSON.stringify(route.method) +
         ", " +
         JSON.stringify(route.path) +
-        ", ...routeMiddleware(dependencies, " +
-        middlewareIds(route) +
-        "), create" +
+        ", ..." +
+        middlewareExpression(route, "MiddlewareHandler") +
+        ", create" +
         route.handlerName +
         "(dependencies." +
         dependencyProperty(route.name) +

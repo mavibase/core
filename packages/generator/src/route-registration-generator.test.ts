@@ -42,7 +42,10 @@ describe("route registration generator", () => {
       'app.get("/health", ...routeMiddleware(dependencies, []), createHealthHandler(dependencies.health));',
     );
     expect(first?.content).toContain(
-      'app.post("/users", ...routeMiddleware(dependencies, ["authenticate"]), createUsersCreateHandler(dependencies.usersCreate));',
+      'import { resolveUsersCreateMiddleware } from "./route-middleware.js";',
+    );
+    expect(first?.content).toContain(
+      'app.post("/users", ...resolveUsersCreateMiddleware<RequestHandler>(dependencies.middleware), createUsersCreateHandler(dependencies.usersCreate));',
     );
     expect(first?.content).toContain("if (dependencies.errorHandler) app.use(dependencies.errorHandler);");
     expect(routeRegistrationTemplateData(graph)?.routes.map((route) => route.name)).toEqual([

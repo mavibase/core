@@ -112,6 +112,7 @@ function structuredArtifact(artifact: GeneratedFile): GeneratedFile {
   }
   if (artifact.path === "route-registration.ts") {
     content = content.replaceAll('from "./route-handlers.js"', 'from "../controllers/index.js"');
+    content = content.replaceAll('from "./route-middleware.js"', 'from "../middleware/index.js"');
   }
 
   return { path, content };

@@ -23,7 +23,10 @@ describe("route infrastructure generators", () => {
           path: "/users/:id",
           description: "Get a user",
           parameters: [{ name: "id", location: "path", type: "uuid" }],
-          middleware: [defineMiddleware({ name: "auth", phase: "before" })],
+          middleware: [
+            defineMiddleware({ name: "auth", phase: "before" }),
+            defineMiddleware({ name: "audit", phase: "after" }),
+          ],
           responses: [{ status: 200, schema: "UserSchema", description: "A user" }],
         }),
       ],
@@ -37,11 +40,21 @@ describe("route infrastructure generators", () => {
     const controller = result.artifacts.find(
       (artifact) => artifact.path === "controllers/index.ts",
     );
+    const registration = result.artifacts.find(
+      (artifact) => artifact.path === "routes/registration.ts",
+    );
 
     expect(paths).toContain("middleware/index.ts");
     expect(paths).toContain("errors/index.ts");
     expect(paths).toContain("docs/openapi.ts");
     expect(middleware?.content).toContain('"name":"auth"');
+    expect(middleware?.content).toContain("resolveUsersGetMiddleware");
+    expect(middleware?.content.indexOf('"id":"auth"')).toBeLessThan(
+      middleware?.content.indexOf('"id":"audit"') ?? -1,
+    );
+    expect(registration?.content).toContain(
+      'from "../middleware/index.js";',
+    );
     expect(errors?.content).toContain('"NOT_IMPLEMENTED"');
     expect(docs?.content).toContain('"/users/{id}"');
     expect(docs?.content).toContain('"200"');

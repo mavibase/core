@@ -50,6 +50,10 @@ function middlewareData(node: GraphNode): MiddlewareData[] {
 export const routeMiddlewareTemplate = defineTemplate<RouteMiddlewareTemplateData[]>(
   (routes) => {
     const lines: string[] = [];
+    lines.push(
+      "export type MiddlewareRegistry<TMiddleware> = Readonly<Record<string, TMiddleware>>;",
+      "",
+    );
     for (const route of routes) {
       lines.push(`export const ${route.exportName} = [`);
       for (const middleware of route.middleware) {
@@ -63,6 +67,18 @@ export const routeMiddlewareTemplate = defineTemplate<RouteMiddlewareTemplateDat
         );
       }
       lines.push("] as const;", "");
+      lines.push(
+        "export function resolve" +
+          route.exportName +
+          "<TMiddleware>(registry: MiddlewareRegistry<TMiddleware> | undefined): TMiddleware[] {",
+        "  return " + route.exportName + ".map((reference) => {",
+        "    const middleware = registry?.[reference.id];",
+        "    if (!middleware) throw new Error(\"Missing route middleware: \" + reference.id);",
+        "    return middleware;",
+        "  });",
+        "}",
+        "",
+      );
     }
     return lines.join("\n");
   },
