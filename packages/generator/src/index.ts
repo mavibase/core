@@ -121,6 +121,7 @@ function structuredArtifact(artifact: GeneratedFile): GeneratedFile {
   }
   if (artifact.path === "express-crud-controllers.ts") {
     content = content.replaceAll('from "./express-crud-repositories.js"', 'from "../repositories/index.js"');
+    content = content.replaceAll('from "./route-schemas.js"', 'from "../routes/schemas.js"');
   }
   if (artifact.path === "express-crud-routes.ts") {
     content = content.replaceAll('from "./express-crud-controllers.js"', 'from "../controllers/crud.js"');

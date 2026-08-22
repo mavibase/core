@@ -37,6 +37,9 @@ describe("Express CRUD generator", () => {
     expect(paths).toContain("mavibase/crud-extension.md");
     expect(controllers?.content).toContain("createListUserController");
     expect(controllers?.content).toContain("repositories/index.js");
+    expect(controllers?.content).toContain("routes/schemas.js");
+    expect(controllers?.content).toContain("parseCrudUserCreateRequest");
+    expect(controllers?.content).toContain("const input = parseCrudUserUpdateRequest");
     expect(repositories?.content).toContain("export interface UserRepository");
     expect(repositories?.content).toContain("list(input: CrudRequestInput)");
     expect(routes?.content).toContain('app.get("/users"');

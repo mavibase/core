@@ -79,6 +79,32 @@ describe("route validation generator", () => {
     expect(generateRouteValidation(graph)?.content).toContain("body: UserSchema,");
   });
 
+  it("generates validation parsers for CRUD model operations", () => {
+    const graph = buildGraph(
+      defineApp({
+        name: "crud-validation-app",
+        version: "1.0.0",
+        environment: "development",
+        stack: { language: "typescript", runtime: "node", backend: { framework: "express" } },
+        models: [defineModel({
+          name: "User",
+          fields: { id: field.uuid().primary() },
+          crud: { enabled: true, operations: { list: true, get: true, create: true, update: true, delete: true } },
+        })],
+      }),
+    );
+
+    const content = generateRouteValidation(graph)?.content ?? "";
+    expect(routeValidationTemplateData(graph).routes).toHaveLength(5);
+    expect(content).toContain('import { UserCreateSchema } from "./schemas.js";');
+    expect(content).toContain('import { UserPatchSchema } from "./schemas.js";');
+    expect(content).toContain("export const CrudUserGetRequestSchema");
+    expect(content).toContain("path: z.object({ id: z.string().uuid() })");
+    expect(content).toContain("body: UserCreateSchema");
+    expect(content).toContain("body: UserPatchSchema");
+    expect(content).toContain("parseCrudUserUpdateRequest");
+  });
+
   it("renders composed route parameter schemas from the registry", () => {
     const graph = buildGraph(
       defineApp({

@@ -8,6 +8,7 @@ import type {
   RouteRegistrationGenerator,
 } from "./generator-interfaces.js";
 import type { GeneratedFile } from "./index.js";
+import { crudValidationParserName } from "./route-validation-generator.js";
 
 interface CrudModel {
   id: string;
@@ -123,6 +124,7 @@ function controllerContent(models: readonly CrudModel[]): string {
   const lines = [
     'import type { NextFunction, Request, Response } from "express";',
     'import type { CrudRepositories } from "./express-crud-repositories.js";',
+    `import { ${models.flatMap((model) => model.operations.map((operation) => `parse${crudValidationParserName(model.name, operation)}`)).join(", ")} } from "./route-schemas.js";`,
     "",
     "export type CrudController = (request: Request, response: Response, next: NextFunction) => Promise<void>;",
     "",
@@ -140,7 +142,8 @@ function controllerContent(models: readonly CrudModel[]): string {
         `export function ${operationControllerName(model, operation)}(deps: CrudControllerDependencies) {`,
         "  return async function controller(request: Request, response: Response, next: NextFunction): Promise<void> {",
         "    try {",
-        `      const result = await deps.repositories.${property}.${operation}({ params: request.params, query: request.query, body: request.body });`,
+        `      const input = parse${crudValidationParserName(model.name, operation)}({ params: request.params, query: request.query, headers: request.headers, body: request.body });`,
+        `      const result = await deps.repositories.${property}.${operation}(input);`,
         operation === "delete"
           ? `      response.status(${status}).send();`
           : `      response.status(${status}).json(result);`,

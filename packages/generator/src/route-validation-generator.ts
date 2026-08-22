@@ -22,6 +22,8 @@ export interface RouteValidationTemplateData {
   refinementImports: { importPath: string; exportName: string; localName: string }[];
 }
 
+type CrudValidationOperation = "list" | "get" | "create" | "replace" | "update" | "delete";
+
 export class RouteValidationGenerationError extends Error {
   readonly code = "MAVIBASE_ROUTE_VALIDATION_GENERATION_ERROR";
 
@@ -111,6 +113,56 @@ function schemaName(routeName: string): string {
   return `${value || "Route"}RequestSchema`;
 }
 
+export function crudValidationParserName(modelName: string, operation: CrudValidationOperation): string {
+  return schemaName(`crud.${modelName}.${operation}`).replace(/Schema$/, "");
+}
+
+function crudValidationRoutes(graph: ApplicationGraph): RouteValidationTemplateData["routes"] {
+  const operations: readonly CrudValidationOperation[] = ["list", "get", "create", "replace", "update", "delete"];
+  return graph.nodes
+    .filter((node) => node.type === "model" && node.data !== undefined)
+    .flatMap((model) => {
+      const crud = model.data?.["crud"];
+      if (!crud || typeof crud !== "object" || Array.isArray(crud)) return [];
+      const crudConfig = crud as Record<string, unknown>;
+      if (crudConfig["enabled"] !== true) return [];
+      const configuredOperations = crudConfig["operations"];
+      if (!configuredOperations || typeof configuredOperations !== "object" || Array.isArray(configuredOperations)) return [];
+      const modelName = nodeName(model);
+      if (!modelName) return [];
+      const fields = graph.edges
+        .filter((edge) => edge.from === model.id && edge.type === "has-field")
+        .map((edge) => graph.nodes.find((node) => node.id === edge.to))
+        .filter((node): node is GraphNode => node?.type === "field")
+        .sort((left, right) => String(left.data?.["name"] ?? "").localeCompare(String(right.data?.["name"] ?? "")));
+      const primary = fields.find((field) => {
+        const modifiers = field.data?.["modifiers"];
+        return modifiers && typeof modifiers === "object" && (modifiers as Record<string, unknown>)["primary"] === true;
+      });
+      const primaryType = primary?.data?.["type"];
+      const idSchema = typeof primaryType === "string" && primaryType in fieldSchemaMap
+        ? fieldSchemaMap[primaryType as ScalarType]
+        : "z.string()";
+      return operations
+        .filter((operation) => (configuredOperations as Record<string, unknown>)[operation] === true)
+        .map((operation) => {
+          const parameters: RouteValidationParameter[] = [];
+          if (operation === "get" || operation === "replace" || operation === "update" || operation === "delete") {
+            parameters.push({ name: "id", location: "path", schema: idSchema, constraints: [], required: true });
+          }
+          if (operation === "create") parameters.push({ name: "body", location: "body", schema: `${modelName}CreateSchema`, constraints: [], required: true });
+          if (operation === "replace") parameters.push({ name: "body", location: "body", schema: `${modelName}ReplaceSchema`, constraints: [], required: true });
+          if (operation === "update") parameters.push({ name: "body", location: "body", schema: `${modelName}PatchSchema`, constraints: [], required: true });
+          return {
+            name: `crud.${modelName}.${operation}`,
+            schemaName: schemaName(`crud.${modelName}.${operation}`),
+            parameters,
+          };
+        });
+    })
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
 function legacyConstraints(expression: string): readonly StructuredConstraint[] | undefined {
   const value = expression.trim();
   if (value === "z.string().email()") return [{ kind: "email" }];
@@ -175,6 +227,8 @@ function routeParameters(route: GraphNode): RouteValidationParameter[] {
         schema:
           typeof schema === "string" && schema.trim()
             ? schema
+            : schema && typeof schema === "object"
+              ? schema as SchemaExpression
             : typeof type === "string" && type in fieldSchemaMap
               ? fieldSchemaMap[type as ScalarType]
               : "z.unknown()",
@@ -273,7 +327,7 @@ export function routeValidationTemplateData(graph: ApplicationGraph): RouteValid
   );
   const schemaNames = new Set(Object.keys(schemaDefinitions(graph)));
   const schemaExpressionReferences = new Set<string>();
-  const routes = graph.nodes
+  const explicitRoutes = graph.nodes
     .filter((node) => node.type === "route")
     .map((node) => {
       const name = nodeName(node) ?? node.id;
@@ -295,17 +349,20 @@ export function routeValidationTemplateData(graph: ApplicationGraph): RouteValid
       return { name, schemaName: schemaName(name), parameters };
     })
     .sort((left, right) => left.name.localeCompare(right.name));
+  const routes = [...explicitRoutes, ...crudValidationRoutes(graph)].sort((left, right) => left.name.localeCompare(right.name));
   const schemaReferences = [
     ...new Set(
       routes
         .flatMap((route) => route.parameters)
         .map((parameter) => parameter.schema)
-        .filter((schema) => /^[A-Za-z_$][A-Za-z0-9_$]*Schema$/.test(schema)),
+        .filter((schema): schema is string =>
+          typeof schema === "string" && /^[A-Za-z_$][A-Za-z0-9_$]*Schema$/.test(schema),
+        ),
     ),
     ...schemaExpressionReferences,
   ].sort((left, right) => left.localeCompare(right));
   const contextualNames = (names: ReadonlySet<string>): string[] =>
-    ["Schema", "InputSchema", "OutputSchema", "PersistenceSchema"].flatMap((suffix) =>
+    ["Schema", "InputSchema", "OutputSchema", "PersistenceSchema", "CreateSchema", "ReplaceSchema", "PatchSchema", "ResponseSchema"].flatMap((suffix) =>
       [...names].map((name) => `${name}${suffix}`),
     );
   const generatedSchemas = new Set([...contextualNames(modelNames), ...contextualNames(schemaNames)]);
