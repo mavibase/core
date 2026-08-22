@@ -9,7 +9,7 @@ import {
 export interface StackConfiguration {
   framework: string;
   runtime: Runtime;
-  database: DatabaseProvider;
+  database?: DatabaseProvider;
   packageManager: PackageManager;
 }
 
@@ -48,7 +48,7 @@ export function validateStackConfiguration(
     ];
   }
 
-  for (const key of ["framework", "runtime", "database", "packageManager"]) {
+  for (const key of ["framework", "runtime", "packageManager"]) {
     if (!isNonEmptyString(configuration[key])) {
       issues.push({
         path: key,
@@ -56,6 +56,14 @@ export function validateStackConfiguration(
         message: `Stack configuration must provide a non-empty ${key} reference.`,
       });
     }
+  }
+
+  if (configuration["database"] !== undefined && !isNonEmptyString(configuration["database"])) {
+    issues.push({
+      path: "database",
+      code: "invalid-configuration",
+      message: "Stack configuration database must be a non-empty reference when provided.",
+    });
   }
 
   if (issues.length > 0) {
@@ -77,7 +85,7 @@ export function defineStackConfiguration(
   return {
     framework: configuration.framework,
     runtime: configuration.runtime,
-    database: configuration.database,
+    ...(configuration.database ? { database: configuration.database } : {}),
     packageManager: configuration.packageManager,
   };
 }

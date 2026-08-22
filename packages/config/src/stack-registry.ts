@@ -195,48 +195,7 @@ export class StackRegistry {
   }
 }
 
-export const builtInStackDefinitions: readonly StackDefinition[] = [
-  {
-    id: "react-node-postgresql-pnpm",
-    name: "React, Node.js, PostgreSQL, and pnpm",
-    description: "A TypeScript React stack running on Node.js with PostgreSQL and pnpm.",
-    framework: "react",
-    runtime: "node",
-    database: "postgresql",
-    packageManager: "pnpm",
-    metadata: { language: "typescript", category: "full-stack" },
-  },
-  {
-    id: "express-node-postgresql-pnpm",
-    name: "Express, Node.js, PostgreSQL, and pnpm",
-    description: "A TypeScript Express stack running on Node.js with PostgreSQL and pnpm.",
-    framework: "express",
-    runtime: "node",
-    database: "postgresql",
-    packageManager: "pnpm",
-    metadata: { language: "typescript", category: "full-stack" },
-  },
-  {
-    id: "fastify-node-postgresql-npm",
-    name: "Fastify, Node.js, PostgreSQL, and npm",
-    description: "A TypeScript Fastify stack running on Node.js with PostgreSQL and npm.",
-    framework: "fastify",
-    runtime: "node",
-    database: "postgresql",
-    packageManager: "npm",
-    metadata: { language: "typescript", category: "full-stack" },
-  },
-  {
-    id: "react-bun-sqlite-bun",
-    name: "React, Bun, SQLite, and Bun",
-    description: "A TypeScript React stack running on Bun with SQLite and Bun.",
-    framework: "react",
-    runtime: "bun",
-    database: "sqlite",
-    packageManager: "bun",
-    metadata: { language: "typescript", category: "full-stack" },
-  },
-];
+export const builtInStackDefinitions: readonly StackDefinition[] = [];
 
 export function createDefaultStackRegistry(): StackRegistry {
   return new StackRegistry(builtInStackDefinitions);

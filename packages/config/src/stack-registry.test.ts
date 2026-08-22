@@ -52,7 +52,7 @@ describe("stack registry", () => {
 
     expect(registries.frameworks.require(definition.framework).name).toBe("React");
     expect(registries.runtimes.require(definition.runtime).name).toBe("Node.js");
-    expect(registries.databases.require(definition.database).name).toBe("PostgreSQL");
+    expect(registries.databases.require(definition.database!).name).toBe("PostgreSQL");
     expect(registries.packageManagers.require(definition.packageManager).name).toBe("pnpm");
   });
 
@@ -147,9 +147,7 @@ describe("stack registry", () => {
   });
 
   it("uses the public config exports for built-in stack definitions", () => {
-    expect(builtInStackDefinitions).toHaveLength(4);
-    expect(createDefaultStackRegistry().require("react-node-postgresql-pnpm").database).toBe(
-      "postgresql",
-    );
+    expect(builtInStackDefinitions).toHaveLength(0);
+    expect(createDefaultStackRegistry().list()).toEqual([]);
   });
 });

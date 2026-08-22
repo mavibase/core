@@ -84,13 +84,6 @@ export function validateStackCompatibility(
       message: "Stack configuration must provide a non-empty runtime reference.",
     });
   }
-  if (!isNonEmptyString(databaseId)) {
-    issues.push({
-      path: "database",
-      code: "missing-reference",
-      message: "Stack configuration must provide a non-empty database reference.",
-    });
-  }
   if (!isNonEmptyString(packageManagerId)) {
     issues.push({
       path: "packageManager",

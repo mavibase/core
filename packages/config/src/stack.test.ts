@@ -33,7 +33,7 @@ describe("stack compatibility and configuration", () => {
 
     expect(registries.frameworks.require(configuration.framework).name).toBe("Fastify");
     expect(registries.runtimes.require(configuration.runtime).name).toBe("Node.js");
-    expect(registries.databases.require(configuration.database).name).toBe("PostgreSQL");
+    expect(registries.databases.require(configuration.database!).name).toBe("PostgreSQL");
     expect(registries.packageManagers.require(configuration.packageManager).name).toBe("npm");
   });
 

@@ -142,6 +142,15 @@ function expressTemplate(data: RouteRegistrationTemplateData): string {
     "  errorHandler?: ErrorRequestHandler;",
     "}",
     "",
+    "export function createDefaultRouteDependencies(): RouteRegistrationDependencies {",
+    "  return {",
+    ...data.routes.map((route) =>
+      "    " + dependencyProperty(route.name) + ": { execute: async () => { throw new Error(" +
+      JSON.stringify("Implement " + route.name + " service.") + "); } },",
+    ),
+    "  };",
+    "}",
+    "",
     "export function registerRoutes(",
     "  app: Express,",
     "  dependencies: RouteRegistrationDependencies,",
@@ -202,6 +211,15 @@ function fastifyTemplate(data: RouteRegistrationTemplateData): string {
     ),
     "  middleware?: Readonly<Record<string, preHandlerHookHandler>>;",
     "  errorHandler?: (error: Error, request: FastifyRequest, reply: FastifyReply) => void | Promise<void>;",
+    "}",
+    "",
+    "export function createDefaultRouteDependencies(): RouteRegistrationDependencies {",
+    "  return {",
+    ...data.routes.map((route) =>
+      "    " + dependencyProperty(route.name) + ": { execute: async () => { throw new Error(" +
+      JSON.stringify("Implement " + route.name + " service.") + "); } },",
+    ),
+    "  };",
     "}",
     "",
     "export function registerRoutes(",
@@ -265,6 +283,15 @@ function honoTemplate(data: RouteRegistrationTemplateData): string {
     ),
     "  middleware?: Readonly<Record<string, MiddlewareHandler>>;",
     "  errorHandler?: Parameters<Hono[\"onError\"]>[0];",
+    "}",
+    "",
+    "export function createDefaultRouteDependencies(): RouteRegistrationDependencies {",
+    "  return {",
+    ...data.routes.map((route) =>
+      "    " + dependencyProperty(route.name) + ": { execute: async () => { throw new Error(" +
+      JSON.stringify("Implement " + route.name + " service.") + "); } },",
+    ),
+    "  };",
     "}",
     "",
     "export function registerRoutes(",

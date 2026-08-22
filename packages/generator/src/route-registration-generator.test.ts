@@ -48,6 +48,7 @@ describe("route registration generator", () => {
       'app.post("/users", ...resolveUsersCreateMiddleware<RequestHandler>(dependencies.middleware), createUsersCreateHandler(dependencies.usersCreate));',
     );
     expect(first?.content).toContain("if (dependencies.errorHandler) app.use(dependencies.errorHandler);");
+    expect(first?.content).toContain("export function createDefaultRouteDependencies(): RouteRegistrationDependencies");
     expect(routeRegistrationTemplateData(graph)?.routes.map((route) => route.name)).toEqual([
       "health",
       "users.create",
