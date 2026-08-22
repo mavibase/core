@@ -146,7 +146,9 @@ function controllerContent(models: readonly CrudModel[]): string {
         `      const input = parse${crudValidationParserName(model.name, operation)}({ params: request.params, query: request.query, headers: request.headers, body: request.body });`,
         operation === "list"
           ? `      const result = await deps.repositories.${property}.list({ ...input, page: input.query.page as number, limit: input.query.limit as number });`
-          : `      const result = await deps.repositories.${property}.${operation}(input);`,
+          : operation === "create"
+            ? `      const result = await deps.repositories.${property}.create({ ...input, body: input.body as Record<string, unknown> });`
+            : `      const result = await deps.repositories.${property}.${operation}(input);`,
         ...(operation === "get"
           ? [`      if (result === undefined || result === null) throw createApiError(404, "NOT_FOUND", "Resource not found.");`]
           : []),
@@ -178,6 +180,10 @@ function repositoryContent(models: readonly CrudModel[]): string {
     "  limit: number;",
     "}",
     "",
+    "export interface CrudCreateInput extends CrudRequestInput {",
+    "  body: Record<string, unknown>;",
+    "}",
+    "",
     "export interface CrudPagination {",
     "  page: number;",
     "  limit: number;",
@@ -199,7 +205,9 @@ function repositoryContent(models: readonly CrudModel[]): string {
       lines.push(
         operation === "list"
           ? "  list(input: CrudListInput): Promise<CrudListResult>;"
-          : `  ${operation}(input: CrudRequestInput): Promise<unknown>;`,
+          : operation === "create"
+            ? "  create(input: CrudCreateInput): Promise<unknown>;"
+            : `  ${operation}(input: CrudRequestInput): Promise<unknown>;`,
       );
     }
     lines.push("}", "");
