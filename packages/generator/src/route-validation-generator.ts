@@ -169,8 +169,8 @@ function crudValidationRoutes(graph: ApplicationGraph): RouteValidationTemplateD
               ? paginationConfig["maxLimit"]
               : 100;
             parameters.push(
-              { name: "page", location: "query", schema: "z.coerce.number().int().positive().default(1)", constraints: [], required: false },
-              { name: "limit", location: "query", schema: `z.coerce.number().int().positive().max(${maxLimit}).default(${defaultLimit})`, constraints: [], required: false },
+              { name: "page", location: "query", schema: "z.coerce.number().int().positive().default(1)", constraints: [], required: true },
+              { name: "limit", location: "query", schema: `z.coerce.number().int().positive().max(${maxLimit}).default(${defaultLimit})`, constraints: [], required: true },
             );
             const filtering = crudConfig["filtering"];
             const filteringConfig = filtering && typeof filtering === "object" && !Array.isArray(filtering)
@@ -198,6 +198,33 @@ function crudValidationRoutes(graph: ApplicationGraph): RouteValidationTemplateD
                   constraints: [],
                   required: false,
                 });
+              }
+            }
+            const sorting = crudConfig["sorting"];
+            const sortingConfig = sorting && typeof sorting === "object" && !Array.isArray(sorting)
+              ? sorting as Record<string, unknown>
+              : undefined;
+            if (sortingConfig?.["enabled"] === true) {
+              const configuredFields = Array.isArray(sortingConfig["fields"])
+                ? sortingConfig["fields"].filter((value): value is string => typeof value === "string")
+                : fields.map((field) => String(field.data?.["name"] ?? ""));
+              const sortFields = fields
+                .map((field) => String(field.data?.["name"] ?? ""))
+                .filter((name) => name.length > 0 && configuredFields.includes(name));
+              if (sortFields.length > 0) {
+                const primaryName = fields.find((field) => {
+                  const modifiers = field.data?.["modifiers"];
+                  return modifiers && typeof modifiers === "object" && (modifiers as Record<string, unknown>)["primary"] === true;
+                });
+                const tieBreaker = String(primaryName?.data?.["name"] ?? "id");
+                const defaultField = typeof sortingConfig["defaultField"] === "string" && sortFields.includes(sortingConfig["defaultField"])
+                  ? sortingConfig["defaultField"]
+                  : sortFields.includes(tieBreaker) ? tieBreaker : sortFields[0];
+                const defaultDirection = sortingConfig["defaultDirection"] === "desc" ? "desc" : "asc";
+                parameters.push(
+                  { name: "sort", location: "query", schema: `z.enum([${sortFields.map((name) => JSON.stringify(name)).join(", ")}]).default(${JSON.stringify(defaultField)})`, constraints: [], required: true },
+                  { name: "direction", location: "query", schema: `z.enum(["asc", "desc"]).default(${JSON.stringify(defaultDirection)})`, constraints: [], required: true },
+                );
               }
             }
           }

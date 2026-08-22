@@ -14,6 +14,7 @@ interface CrudModel {
   id: string;
   name: string;
   operations: CrudOperation[];
+  stableSortField: string;
 }
 
 const operationOrder: readonly CrudOperation[] = [
@@ -80,7 +81,15 @@ function crudModels(graph: ApplicationGraph): CrudModel[] {
       if (selected.length === 0) return undefined;
       const name = node.data["name"];
       if (typeof name !== "string" || !name.trim()) return undefined;
-      return { id: node.id, name, operations: selected };
+      const primaryField = graph.edges
+        .filter((edge) => edge.from === node.id && edge.type === "has-field")
+        .map((edge) => graph.nodes.find((candidate) => candidate.id === edge.to))
+        .find((field) => {
+          const modifiers = field?.data?.["modifiers"];
+          return modifiers && typeof modifiers === "object" && (modifiers as Record<string, unknown>)["primary"] === true;
+        });
+      const stableSortField = typeof primaryField?.data?.["name"] === "string" ? primaryField.data["name"] : "id";
+      return { id: node.id, name, operations: selected, stableSortField };
     })
     .filter((model): model is CrudModel => model !== undefined)
     .sort((left, right) => left.name.localeCompare(right.name));
@@ -145,7 +154,7 @@ function controllerContent(models: readonly CrudModel[]): string {
         "    try {",
         `      const input = parse${crudValidationParserName(model.name, operation)}({ params: request.params, query: request.query, headers: request.headers, body: request.body });`,
         operation === "list"
-          ? `      const result = await deps.repositories.${property}.list({ ...input, page: input.query.page as number, limit: input.query.limit as number, filters: input.query.filter as Record<string, unknown> | undefined });`
+          ? `      const result = await deps.repositories.${property}.list({ ...input, page: input.query.page as number, limit: input.query.limit as number, filters: input.query.filter as Record<string, unknown> | undefined, sort: input.query.sort === undefined ? undefined : { field: input.query.sort as string, direction: input.query.direction as "asc" | "desc", tieBreaker: ${JSON.stringify(model.stableSortField)} } });`
           : operation === "create"
             ? `      const result = await deps.repositories.${property}.create({ ...input, body: input.body as Record<string, unknown> });`
             : operation === "replace"
@@ -186,6 +195,13 @@ function repositoryContent(models: readonly CrudModel[]): string {
     "  page: number;",
     "  limit: number;",
     "  filters?: Record<string, unknown>;",
+    "  sort?: CrudSortInput;",
+    "}",
+    "",
+    "export interface CrudSortInput {",
+    "  field: string;",
+    "  direction: \"asc\" | \"desc\";",
+    "  tieBreaker: string;",
     "}",
     "",
     "export interface CrudCreateInput extends CrudRequestInput {",

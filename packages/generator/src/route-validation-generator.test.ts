@@ -150,6 +150,31 @@ describe("route validation generator", () => {
     expect(content).not.toContain("id: z.string().uuid().optional()");
   });
 
+  it("generates allow-listed sorting with direction defaults", () => {
+    const graph = buildGraph(
+      defineApp({
+        name: "sorting-app",
+        version: "1.0.0",
+        environment: "development",
+        stack: { language: "typescript", runtime: "node", backend: { framework: "express" } },
+        models: [defineModel({
+          name: "User",
+          fields: { id: field.uuid().primary(), email: field.string(), age: field.integer() },
+          crud: {
+            enabled: true,
+            operations: { list: true },
+            sorting: { enabled: true, fields: ["email", "age"], defaultField: "email", defaultDirection: "desc" },
+          },
+        })],
+      }),
+    );
+
+    const content = generateRouteValidation(graph)?.content ?? "";
+    expect(content).toContain('sort: z.enum(["age", "email"]).default("email")');
+    expect(content).toContain('direction: z.enum(["asc", "desc"]).default("desc")');
+    expect(content).not.toContain('sort: z.enum(["id"])');
+  });
+
   it("renders composed route parameter schemas from the registry", () => {
     const graph = buildGraph(
       defineApp({

@@ -47,6 +47,8 @@ describe("Express CRUD generator", () => {
     expect(controllers?.content).toContain("page: input.query.page as number");
     expect(controllers?.content).toContain("limit: input.query.limit as number");
     expect(controllers?.content).toContain("filters: input.query.filter as Record<string, unknown> | undefined");
+    expect(controllers?.content).toContain('direction: input.query.direction as "asc" | "desc"');
+    expect(controllers?.content).toContain('tieBreaker: "id"');
     expect(controllers?.content).toContain("body: input.body as Record<string, unknown>");
     expect(controllers?.content).toContain("createReplaceUserController");
     expect(controllers?.content).toContain("createUpdateUserController");
@@ -54,6 +56,8 @@ describe("Express CRUD generator", () => {
     expect(repositories?.content).toContain("export interface CrudListInput extends CrudRequestInput");
     expect(repositories?.content).toContain("list(input: CrudListInput): Promise<CrudListResult>");
     expect(repositories?.content).toContain("filters?: Record<string, unknown>");
+    expect(repositories?.content).toContain("sort?: CrudSortInput");
+    expect(repositories?.content).toContain("tieBreaker: string");
     expect(repositories?.content).toContain("export interface CrudCreateInput extends CrudRequestInput");
     expect(repositories?.content).toContain("create(input: CrudCreateInput): Promise<unknown>");
     expect(repositories?.content).toContain("export interface CrudReplaceInput extends CrudRequestInput");
