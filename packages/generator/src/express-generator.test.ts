@@ -40,6 +40,8 @@ describe("Express CRUD generator", () => {
     expect(controllers?.content).toContain("routes/schemas.js");
     expect(controllers?.content).toContain("parseCrudUserCreateRequest");
     expect(controllers?.content).toContain("const input = parseCrudUserUpdateRequest");
+    expect(controllers?.content).toContain('import { createApiError } from "./api-errors.js";');
+    expect(controllers?.content).toContain('if (result === undefined || result === null) throw createApiError(404, "NOT_FOUND", "Resource not found.");');
     expect(controllers?.content).toContain("page: input.query.page as number");
     expect(controllers?.content).toContain("limit: input.query.limit as number");
     expect(repositories?.content).toContain("export interface UserRepository");

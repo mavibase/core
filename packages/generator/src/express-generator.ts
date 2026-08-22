@@ -123,6 +123,7 @@ function supportsExpress(context: GeneratorContext): boolean {
 function controllerContent(models: readonly CrudModel[]): string {
   const lines = [
     'import type { NextFunction, Request, Response } from "express";',
+    'import { createApiError } from "./api-errors.js";',
     'import type { CrudRepositories } from "./express-crud-repositories.js";',
     `import { ${models.flatMap((model) => model.operations.map((operation) => `parse${crudValidationParserName(model.name, operation)}`)).join(", ")} } from "./route-schemas.js";`,
     "",
@@ -146,6 +147,9 @@ function controllerContent(models: readonly CrudModel[]): string {
         operation === "list"
           ? `      const result = await deps.repositories.${property}.list({ ...input, page: input.query.page as number, limit: input.query.limit as number });`
           : `      const result = await deps.repositories.${property}.${operation}(input);`,
+        ...(operation === "get"
+          ? [`      if (result === undefined || result === null) throw createApiError(404, "NOT_FOUND", "Resource not found.");`]
+          : []),
         operation === "delete"
           ? `      response.status(${status}).send();`
           : `      response.status(${status}).json(result);`,
