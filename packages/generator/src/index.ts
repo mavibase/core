@@ -292,6 +292,7 @@ export * from "./schema-expression-generator.js";
 export * from "./route-handler-generator.js";
 export * from "./route-registration-generator.js";
 export * from "./route-middleware-generator.js";
+export * from "./generator-interfaces.js";
 export * from "./api-error-generator.js";
 export * from "./openapi-generator.js";
 export * from "./schema-normalizer.js";
