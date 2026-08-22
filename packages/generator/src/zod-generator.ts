@@ -191,6 +191,7 @@ function applyConstraint(
 function fieldSchema(
   field: NormalizedModelFieldContext,
   modelName: string,
+  mode: SchemaExpressionMode,
   refinements: Record<string, RefinementDefinition>,
   imports: Map<string, { importPath: string; exportName: string; localName: string }>,
 ): ZodFieldTemplateData {
@@ -200,7 +201,7 @@ function fieldSchema(
     schema = applyConstraint(schema, constraint, refinements, imports);
   }
 
-  if (field.optional) {
+  if (field.optional || mode === "patch") {
     schema += ".optional()";
   }
 
@@ -225,15 +226,26 @@ function relationshipSchema(
   };
 }
 
-const schemaModes: readonly SchemaExpressionMode[] = ["default", "input", "output", "persistence"];
+const schemaModes: readonly SchemaExpressionMode[] = [
+  "default",
+  "input",
+  "output",
+  "persistence",
+  "create",
+  "replace",
+  "patch",
+  "response",
+];
 
 function schemaSuffix(mode: SchemaExpressionMode): string {
   return mode === "default" ? "" : mode[0]!.toUpperCase() + mode.slice(1);
 }
 
 function fieldIncluded(field: NormalizedModelFieldContext, mode: SchemaExpressionMode): boolean {
-  if (mode === "input") return !field.readOnly && !field.generated;
-  if (mode === "output") return !field.writeOnly;
+  if (mode === "input" || mode === "create" || mode === "replace" || mode === "patch") {
+    return !field.readOnly && !field.generated;
+  }
+  if (mode === "output" || mode === "response") return !field.writeOnly;
   return true;
 }
 
@@ -260,7 +272,7 @@ export function zodTemplateData(graph: ApplicationGraph): ZodSchemasTemplateData
         exportName: `${model.name}${schemaSuffix(mode)}Schema`,
         fields: model.fields
           .filter((field) => fieldIncluded(field, mode))
-          .map((field) => fieldSchema(field, model.name, refinements, imports)),
+          .map((field) => fieldSchema(field, model.name, mode, refinements, imports)),
         relationships: model.relationships.map((relationship) => relationshipSchema(relationship)),
       } satisfies ZodModelTemplateData)),
     );

@@ -33,6 +33,10 @@ describe("zod generator", () => {
     expect(first?.content).toContain("export const UserInputSchema = z.object({");
     expect(first?.content).toContain("export const UserOutputSchema = z.object({");
     expect(first?.content).toContain("export const UserPersistenceSchema = z.object({");
+    expect(first?.content).toContain("export const UserCreateSchema = z.object({");
+    expect(first?.content).toContain("export const UserReplaceSchema = z.object({");
+    expect(first?.content).toContain("export const UserPatchSchema = z.object({");
+    expect(first?.content).toContain("export const UserResponseSchema = z.object({");
     expect(first?.content).toContain("  age: z.number().int(),");
   });
 
@@ -158,6 +162,43 @@ describe("zod generator", () => {
     expect(input).not.toContain("id: z.string().uuid(),");
     expect(output).toContain("id: z.string().uuid(),");
     expect(output).not.toContain("password: z.string(),");
+  });
+
+  it("generates operation-specific input and response schemas", () => {
+    const graph = buildGraph({
+      name: "operation-schemas-app",
+      version: "1.0.0",
+      environment: "development",
+      stack: { language: "typescript", runtime: "node" },
+      models: [
+        defineModel({
+          name: "User",
+          fields: {
+            id: field.uuid().generated(),
+            name: field.string().required(),
+            nickname: field.string().optional(),
+            secret: field.string().writeOnly(),
+          },
+        }),
+      ],
+    });
+
+    const content = generateZodSchemas(graph)?.content ?? "";
+    const create = content.slice(content.indexOf("export const UserCreateSchema"), content.indexOf("export const UserReplaceSchema"));
+    const replace = content.slice(content.indexOf("export const UserReplaceSchema"), content.indexOf("export const UserPatchSchema"));
+    const patch = content.slice(content.indexOf("export const UserPatchSchema"), content.indexOf("export const UserResponseSchema"));
+    const response = content.slice(content.indexOf("export const UserResponseSchema"));
+
+    expect(create).toContain("name: z.string(),");
+    expect(create).toContain("nickname: z.string().optional(),");
+    expect(create).not.toContain("id: z.string().uuid()");
+    expect(create).toContain("secret: z.string(),");
+    expect(replace).toContain("name: z.string(),");
+    expect(replace).toContain("nickname: z.string().optional(),");
+    expect(patch).toContain("name: z.string().optional(),");
+    expect(patch).toContain("nickname: z.string().optional(),");
+    expect(response).toContain("id: z.string().uuid(),");
+    expect(response).not.toContain("secret: z.string()");
   });
 
   it("renders reusable composed schemas and model references", () => {

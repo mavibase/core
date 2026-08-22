@@ -8,7 +8,15 @@ export interface SchemaExpressionRenderContext {
   schemaReferences?: Set<string>;
 }
 
-export type SchemaExpressionMode = "default" | "input" | "output" | "persistence";
+export type SchemaExpressionMode =
+  | "default"
+  | "input"
+  | "output"
+  | "persistence"
+  | "create"
+  | "replace"
+  | "patch"
+  | "response";
 
 export class SchemaExpressionGenerationError extends Error {
   readonly code = "MAVIBASE_SCHEMA_EXPRESSION_GENERATION_ERROR";
