@@ -63,12 +63,43 @@ export function isApiError(value: unknown): value is ApiError {
   );
 }
 
+export function mapDatabaseError(error: unknown, requestId?: string): ApiError | undefined {
+  if (!error || typeof error !== "object") return undefined;
+
+  const databaseError = error as Record<string, unknown>;
+  const code = typeof databaseError["code"] === "string" ? databaseError["code"] : undefined;
+
+  if (code === "23505" || code === "P2002") {
+    return createApiError(409, "CONFLICT", "Resource already exists.", undefined, requestId);
+  }
+
+  if (code === "23503" || code === "P2003") {
+    return createApiError(409, "CONFLICT", "Resource relationship conflicts with existing data.", undefined, requestId);
+  }
+
+  if (code === "P2025") {
+    return createApiError(404, "NOT_FOUND", "Resource not found.", undefined, requestId);
+  }
+
+  if (code === "22P02" || code === "P2006") {
+    return createApiError(400, "BAD_REQUEST", "Database input is invalid.", undefined, requestId);
+  }
+
+  if (code === "23502" || code === "23514" || code === "22001" || code === "P2000") {
+    return createApiError(422, "UNPROCESSABLE_ENTITY", "Resource violates a database constraint.", undefined, requestId);
+  }
+
+  return undefined;
+}
+
 export function toApiError(error: unknown, requestId?: string): ApiError {
   if (isApiError(error)) {
     return requestId === undefined || error.requestId !== undefined
       ? error
       : { ...error, requestId };
   }
+  const databaseError = mapDatabaseError(error, requestId);
+  if (databaseError) return databaseError;
   return createApiError(500, "INTERNAL_ERROR", "Internal server error.", undefined, requestId);
 }
 
