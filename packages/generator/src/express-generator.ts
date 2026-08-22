@@ -143,7 +143,9 @@ function controllerContent(models: readonly CrudModel[]): string {
         "  return async function controller(request: Request, response: Response, next: NextFunction): Promise<void> {",
         "    try {",
         `      const input = parse${crudValidationParserName(model.name, operation)}({ params: request.params, query: request.query, headers: request.headers, body: request.body });`,
-        `      const result = await deps.repositories.${property}.${operation}(input);`,
+        operation === "list"
+          ? `      const result = await deps.repositories.${property}.list({ ...input, page: input.query.page as number, limit: input.query.limit as number });`
+          : `      const result = await deps.repositories.${property}.${operation}(input);`,
         operation === "delete"
           ? `      response.status(${status}).send();`
           : `      response.status(${status}).json(result);`,
@@ -167,13 +169,34 @@ function repositoryContent(models: readonly CrudModel[]): string {
     "  body: unknown;",
     "}",
     "",
+    "export interface CrudListInput extends CrudRequestInput {",
+    "  page: number;",
+    "  limit: number;",
+    "}",
+    "",
+    "export interface CrudPagination {",
+    "  page: number;",
+    "  limit: number;",
+    "  total: number;",
+    "  totalPages: number;",
+    "}",
+    "",
+    "export interface CrudListResult {",
+    "  items: unknown[];",
+    "  pagination: CrudPagination;",
+    "}",
+    "",
   ];
   for (const model of models) {
     const property = propertyName(model.name);
     const typeName = `${symbolName(model.name)}Repository`;
     lines.push(`export interface ${typeName} {`);
     for (const operation of model.operations) {
-      lines.push(`  ${operation}(input: CrudRequestInput): Promise<unknown>;`);
+      lines.push(
+        operation === "list"
+          ? "  list(input: CrudListInput): Promise<CrudListResult>;"
+          : `  ${operation}(input: CrudRequestInput): Promise<unknown>;`,
+      );
     }
     lines.push("}", "");
     lines.push(`export type ${symbolName(model.name)}RepositoryKey = "${property}";`, "");

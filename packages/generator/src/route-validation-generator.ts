@@ -147,6 +147,22 @@ function crudValidationRoutes(graph: ApplicationGraph): RouteValidationTemplateD
         .filter((operation) => (configuredOperations as Record<string, unknown>)[operation] === true)
         .map((operation) => {
           const parameters: RouteValidationParameter[] = [];
+          if (operation === "list") {
+            const pagination = crudConfig["pagination"];
+            const paginationConfig = pagination && typeof pagination === "object" && !Array.isArray(pagination)
+              ? pagination as Record<string, unknown>
+              : {};
+            const defaultLimit = typeof paginationConfig["defaultLimit"] === "number"
+              ? paginationConfig["defaultLimit"]
+              : 20;
+            const maxLimit = typeof paginationConfig["maxLimit"] === "number"
+              ? paginationConfig["maxLimit"]
+              : 100;
+            parameters.push(
+              { name: "page", location: "query", schema: "z.coerce.number().int().positive().default(1)", constraints: [], required: false },
+              { name: "limit", location: "query", schema: `z.coerce.number().int().positive().max(${maxLimit}).default(${defaultLimit})`, constraints: [], required: false },
+            );
+          }
           if (operation === "get" || operation === "replace" || operation === "update" || operation === "delete") {
             parameters.push({ name: "id", location: "path", schema: idSchema, constraints: [], required: true });
           }

@@ -102,6 +102,8 @@ describe("route validation generator", () => {
     expect(content).toContain("path: z.object({ id: z.string().uuid() })");
     expect(content).toContain("body: UserCreateSchema");
     expect(content).toContain("body: UserPatchSchema");
+    expect(content).toContain("page: z.coerce.number().int().positive().default(1)");
+    expect(content).toContain("limit: z.coerce.number().int().positive().max(100).default(20)");
     expect(content).toContain("parseCrudUserUpdateRequest");
   });
 

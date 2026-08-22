@@ -40,8 +40,12 @@ describe("Express CRUD generator", () => {
     expect(controllers?.content).toContain("routes/schemas.js");
     expect(controllers?.content).toContain("parseCrudUserCreateRequest");
     expect(controllers?.content).toContain("const input = parseCrudUserUpdateRequest");
+    expect(controllers?.content).toContain("page: input.query.page as number");
+    expect(controllers?.content).toContain("limit: input.query.limit as number");
     expect(repositories?.content).toContain("export interface UserRepository");
-    expect(repositories?.content).toContain("list(input: CrudRequestInput)");
+    expect(repositories?.content).toContain("export interface CrudListInput extends CrudRequestInput");
+    expect(repositories?.content).toContain("list(input: CrudListInput): Promise<CrudListResult>");
+    expect(repositories?.content).toContain("totalPages: number");
     expect(routes?.content).toContain('app.get("/users"');
     expect(routes?.content).toContain('app.patch("/users/:id"');
     expect(routes?.content).toContain('app.delete("/users/:id"');
