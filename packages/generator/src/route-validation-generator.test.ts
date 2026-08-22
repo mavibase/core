@@ -107,6 +107,29 @@ describe("route validation generator", () => {
     expect(content).toContain("parseCrudUserUpdateRequest");
   });
 
+  it("uses configured pagination defaults and maximums", () => {
+    const graph = buildGraph(
+      defineApp({
+        name: "configured-pagination-app",
+        version: "1.0.0",
+        environment: "development",
+        stack: { language: "typescript", runtime: "node", backend: { framework: "express" } },
+        models: [defineModel({
+          name: "User",
+          crud: {
+            enabled: true,
+            operations: { list: true },
+            pagination: { enabled: true, defaultLimit: 25, maxLimit: 50 },
+          },
+        })],
+      }),
+    );
+
+    const content = generateRouteValidation(graph)?.content ?? "";
+    expect(content).toContain("page: z.coerce.number().int().positive().default(1)");
+    expect(content).toContain("limit: z.coerce.number().int().positive().max(50).default(25)");
+  });
+
   it("renders composed route parameter schemas from the registry", () => {
     const graph = buildGraph(
       defineApp({
