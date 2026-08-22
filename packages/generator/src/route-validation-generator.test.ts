@@ -130,6 +130,26 @@ describe("route validation generator", () => {
     expect(content).toContain("limit: z.coerce.number().int().positive().max(50).default(25)");
   });
 
+  it("generates an allow-listed, typed filter query", () => {
+    const graph = buildGraph(
+      defineApp({
+        name: "filtering-app",
+        version: "1.0.0",
+        environment: "development",
+        stack: { language: "typescript", runtime: "node", backend: { framework: "express" } },
+        models: [defineModel({
+          name: "User",
+          fields: { id: field.uuid().primary(), age: field.integer(), email: field.string() },
+          crud: { enabled: true, operations: { list: true }, filtering: { enabled: true, fields: ["age", "email"] } },
+        })],
+      }),
+    );
+
+    const content = generateRouteValidation(graph)?.content ?? "";
+    expect(content).toContain("filter: z.object({ age: z.coerce.number().int().optional(), email: z.string().optional() }).strict()");
+    expect(content).not.toContain("id: z.string().uuid().optional()");
+  });
+
   it("renders composed route parameter schemas from the registry", () => {
     const graph = buildGraph(
       defineApp({

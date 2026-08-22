@@ -19,7 +19,8 @@ describe("Express CRUD generator", () => {
         fields: { id: field.uuid().primary(), email: field.string().required() },
         crud: {
           enabled: true,
-          operations: { list: true, get: true, create: true, replace: true, update: true, delete: true },
+            operations: { list: true, get: true, create: true, replace: true, update: true, delete: true },
+            filtering: { enabled: true, fields: ["email"] },
         },
       })],
     });
@@ -45,12 +46,14 @@ describe("Express CRUD generator", () => {
     expect(controllers?.content).toContain('if (result !== true) throw createApiError(404, "NOT_FOUND", "Resource not found.");');
     expect(controllers?.content).toContain("page: input.query.page as number");
     expect(controllers?.content).toContain("limit: input.query.limit as number");
+    expect(controllers?.content).toContain("filters: input.query.filter as Record<string, unknown> | undefined");
     expect(controllers?.content).toContain("body: input.body as Record<string, unknown>");
     expect(controllers?.content).toContain("createReplaceUserController");
     expect(controllers?.content).toContain("createUpdateUserController");
     expect(repositories?.content).toContain("export interface UserRepository");
     expect(repositories?.content).toContain("export interface CrudListInput extends CrudRequestInput");
     expect(repositories?.content).toContain("list(input: CrudListInput): Promise<CrudListResult>");
+    expect(repositories?.content).toContain("filters?: Record<string, unknown>");
     expect(repositories?.content).toContain("export interface CrudCreateInput extends CrudRequestInput");
     expect(repositories?.content).toContain("create(input: CrudCreateInput): Promise<unknown>");
     expect(repositories?.content).toContain("export interface CrudReplaceInput extends CrudRequestInput");

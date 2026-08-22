@@ -145,7 +145,7 @@ function controllerContent(models: readonly CrudModel[]): string {
         "    try {",
         `      const input = parse${crudValidationParserName(model.name, operation)}({ params: request.params, query: request.query, headers: request.headers, body: request.body });`,
         operation === "list"
-          ? `      const result = await deps.repositories.${property}.list({ ...input, page: input.query.page as number, limit: input.query.limit as number });`
+          ? `      const result = await deps.repositories.${property}.list({ ...input, page: input.query.page as number, limit: input.query.limit as number, filters: input.query.filter as Record<string, unknown> | undefined });`
           : operation === "create"
             ? `      const result = await deps.repositories.${property}.create({ ...input, body: input.body as Record<string, unknown> });`
             : operation === "replace"
@@ -185,6 +185,7 @@ function repositoryContent(models: readonly CrudModel[]): string {
     "export interface CrudListInput extends CrudRequestInput {",
     "  page: number;",
     "  limit: number;",
+    "  filters?: Record<string, unknown>;",
     "}",
     "",
     "export interface CrudCreateInput extends CrudRequestInput {",

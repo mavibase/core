@@ -47,6 +47,16 @@ const fieldSchemaMap: Readonly<Record<ScalarType, string>> = {
   bigint: "z.bigint()",
 };
 
+function queryFilterSchema(type: unknown): string {
+  if (type === "integer") return "z.coerce.number().int()";
+  if (type === "float" || type === "decimal") return "z.coerce.number()";
+  if (type === "boolean") return 'z.enum(["true", "false"]).transform((value) => value === "true")';
+  if (type === "datetime" || type === "date") return "z.coerce.date()";
+  if (type === "bigint") return "z.coerce.bigint()";
+  if (type === "uuid") return "z.string().uuid()";
+  return "z.string()";
+}
+
 function nodeName(node: GraphNode): string | undefined {
   const name = node.data?.["name"];
   return typeof name === "string" && name.trim() ? name : undefined;
@@ -162,6 +172,34 @@ function crudValidationRoutes(graph: ApplicationGraph): RouteValidationTemplateD
               { name: "page", location: "query", schema: "z.coerce.number().int().positive().default(1)", constraints: [], required: false },
               { name: "limit", location: "query", schema: `z.coerce.number().int().positive().max(${maxLimit}).default(${defaultLimit})`, constraints: [], required: false },
             );
+            const filtering = crudConfig["filtering"];
+            const filteringConfig = filtering && typeof filtering === "object" && !Array.isArray(filtering)
+              ? filtering as Record<string, unknown>
+              : undefined;
+            if (filteringConfig?.["enabled"] === true) {
+              const configuredFields = Array.isArray(filteringConfig["fields"])
+                ? filteringConfig["fields"].filter((value): value is string => typeof value === "string")
+                : fields.map((field) => String(field.data?.["name"] ?? ""));
+              const filterFields = fields
+                .filter((field) => {
+                  const name = String(field.data?.["name"] ?? "");
+                  return name.length > 0 && configuredFields.includes(name);
+                })
+                .sort((left, right) => String(left.data?.["name"] ?? "").localeCompare(String(right.data?.["name"] ?? "")));
+              if (filterFields.length > 0) {
+                const filterProperties = filterFields.map((field) => {
+                  const name = String(field.data?.["name"] ?? "");
+                  return `${propertyName(name)}: ${queryFilterSchema(field.data?.["type"])}.optional()`;
+                });
+                parameters.push({
+                  name: "filter",
+                  location: "query",
+                  schema: `z.object({ ${filterProperties.join(", ")} }).strict()`,
+                  constraints: [],
+                  required: false,
+                });
+              }
+            }
           }
           if (operation === "get" || operation === "replace" || operation === "update" || operation === "delete") {
             parameters.push({ name: "id", location: "path", schema: idSchema, constraints: [], required: true });
