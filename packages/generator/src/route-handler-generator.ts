@@ -165,6 +165,7 @@ function outputExpression(route: RouteHandlerData): string {
 function expressTemplate(data: RouteHandlerTemplateData): string {
   const lines = [
     'import type { NextFunction, Request, Response } from "express";',
+    'import { toApiError } from "./api-errors.js";',
     ...validationImports(data),
     "",
   ];
@@ -179,7 +180,7 @@ function expressTemplate(data: RouteHandlerTemplateData): string {
       "      const result = await deps.execute(input, { request, response });",
       "      response.status(" + route.responseStatus + ").json(" + outputExpression(route) + ");",
       "    } catch (error) {",
-      "      next(error);",
+      "      next(toApiError(error));",
       "    }",
       "  };",
       "}",
