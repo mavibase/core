@@ -23,6 +23,7 @@ export interface ZodModelTemplateData {
   exportName: string;
   fields: ZodFieldTemplateData[];
   relationships: ZodFieldTemplateData[];
+  collectionExportName: string;
 }
 
 export interface ZodSchemaTemplateData {
@@ -90,6 +91,20 @@ export const zodSchemasTemplate = defineTemplate<ZodSchemasTemplateData>(
       }
 
       lines.push("});", "");
+      if (model.exportName.endsWith("ResponseSchema")) {
+        lines.push(
+          `export const ${model.collectionExportName} = z.object({`,
+          `  items: z.array(${model.exportName}),`,
+          "  pagination: z.object({",
+          "    page: z.number().int().positive(),",
+          "    limit: z.number().int().positive(),",
+          "    total: z.number().int().nonnegative(),",
+          "    totalPages: z.number().int().nonnegative(),",
+          "  }),",
+          "});",
+          "",
+        );
+      }
     }
 
     return lines.join("\n");
@@ -270,6 +285,7 @@ export function zodTemplateData(graph: ApplicationGraph): ZodSchemasTemplateData
       modelContexts.map((model) => ({
         name: model.name,
         exportName: `${model.name}${schemaSuffix(mode)}Schema`,
+        collectionExportName: `${model.name}CollectionResponseSchema`,
         fields: model.fields
           .filter((field) => fieldIncluded(field, mode))
           .map((field) => fieldSchema(field, model.name, mode, refinements, imports)),

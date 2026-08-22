@@ -37,6 +37,9 @@ describe("zod generator", () => {
     expect(first?.content).toContain("export const UserReplaceSchema = z.object({");
     expect(first?.content).toContain("export const UserPatchSchema = z.object({");
     expect(first?.content).toContain("export const UserResponseSchema = z.object({");
+    expect(first?.content).toContain("export const UserCollectionResponseSchema = z.object({");
+    expect(first?.content).toContain("items: z.array(UserResponseSchema)");
+    expect(first?.content).toContain("totalPages: z.number().int().nonnegative()");
     expect(first?.content).toContain("  age: z.number().int(),");
   });
 

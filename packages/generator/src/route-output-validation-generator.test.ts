@@ -118,4 +118,23 @@ describe("route output validation generator", () => {
       RouteOutputValidationGenerationError,
     );
   });
+
+  it("generates output validation schemas for CRUD responses", () => {
+    const graph = buildGraph(defineApp({
+      name: "crud-output-app",
+      version: "1.0.0",
+      environment: "development",
+      stack: { language: "typescript", runtime: "node", backend: { framework: "express" } },
+      models: [defineModel({
+        name: "User",
+        crud: { enabled: true, operations: { list: true, delete: true } },
+      })],
+    }));
+
+    const content = generateRouteOutputValidation(graph)?.content ?? "";
+    expect(content).toContain("CrudUserListResponseSchemas");
+    expect(content).toContain("UserCollectionResponseSchema");
+    expect(content).toContain("CrudUserDeleteResponseSchemas");
+    expect(content).toContain("z.void()");
+  });
 });

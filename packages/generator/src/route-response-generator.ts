@@ -55,6 +55,34 @@ function responseData(route: GraphNode): ResponseTemplateData[] {
     .sort((left, right) => left.status - right.status);
 }
 
+function crudResponseRoutes(graph: ApplicationGraph): RouteResponseTemplateData[] {
+  const operations = ["list", "get", "create", "replace", "update", "delete"] as const;
+  return graph.nodes
+    .filter((node) => node.type === "model" && node.data !== undefined)
+    .flatMap((model) => {
+      const crud = model.data?.["crud"];
+      if (!crud || typeof crud !== "object" || Array.isArray(crud)) return [];
+      const config = crud as Record<string, unknown>;
+      const configured = config["operations"];
+      const name = nodeName(model);
+      if (config["enabled"] !== true || !name || !configured || typeof configured !== "object" || Array.isArray(configured)) return [];
+      return operations
+        .filter((operation) => (configured as Record<string, unknown>)[operation] === true)
+        .map((operation) => ({
+          name: `crud.${name}.${operation}`,
+          exportName: exportName(`crud.${name}.${operation}`),
+          responses: operation === "delete"
+            ? [{ status: 204, description: "Resource deleted." }]
+            : [{
+                status: operation === "create" ? 201 : 200,
+                description: operation === "list" ? "Paginated resource collection." : "Resource response.",
+                schema: operation === "list" ? `${name}CollectionResponseSchema` : `${name}ResponseSchema`,
+              }],
+        }));
+    })
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
 export const routeResponseTemplate = defineTemplate<RouteResponseTemplateData[]>(
   (routes) => {
     const schemaReferences = [
@@ -94,7 +122,7 @@ export function routeResponseTemplateData(graph: ApplicationGraph): RouteRespons
       .filter((node) => node.type === "model")
       .map((node) => nodeName(node))
       .filter((name): name is string => name !== undefined)
-      .map((name) => `${name}Schema`),
+      .flatMap((name) => [`${name}Schema`, `${name}ResponseSchema`, `${name}CollectionResponseSchema`]),
   );
   const routes = graph.nodes
     .filter((node) => node.type === "route")
@@ -112,7 +140,7 @@ export function routeResponseTemplateData(graph: ApplicationGraph): RouteRespons
     })
     .filter((route) => route.responses.length > 0)
     .sort((left, right) => left.name.localeCompare(right.name));
-  return routes;
+  return [...routes, ...crudResponseRoutes(graph)].sort((left, right) => left.name.localeCompare(right.name));
 }
 
 export function generateRouteResponses(graph: ApplicationGraph): GeneratedFile | undefined {

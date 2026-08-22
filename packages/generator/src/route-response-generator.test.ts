@@ -73,4 +73,23 @@ describe("route response generator", () => {
 
     expect(() => generateRouteResponses(graph)).toThrow(RouteResponseGenerationError);
   });
+
+  it("generates response metadata for CRUD operations", () => {
+    const graph = buildGraph(defineApp({
+      name: "crud-response-app",
+      version: "1.0.0",
+      environment: "development",
+      stack: { language: "typescript", runtime: "node", backend: { framework: "express" } },
+      models: [defineModel({
+        name: "User",
+        crud: { enabled: true, operations: { list: true, get: true, create: true, delete: true } },
+      })],
+    }));
+
+    const content = generateRouteResponses(graph)?.content ?? "";
+    expect(content).toContain("CrudUserListResponses");
+    expect(content).toContain("schema: UserCollectionResponseSchema");
+    expect(content).toContain("schema: UserResponseSchema");
+    expect(content).toContain("CrudUserDeleteResponses");
+  });
 });

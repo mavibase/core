@@ -62,6 +62,36 @@ function schemaDefinitions(graph: ApplicationGraph): Record<string, SchemaExpres
   return schemas as Record<string, SchemaExpression>;
 }
 
+function crudOutputValidationRoutes(graph: ApplicationGraph): RouteOutputValidationTemplateData[] {
+  const operations = ["list", "get", "create", "replace", "update", "delete"] as const;
+  return graph.nodes
+    .filter((node) => node.type === "model" && node.data !== undefined)
+    .flatMap((model) => {
+      const crud = model.data?.["crud"];
+      if (!crud || typeof crud !== "object" || Array.isArray(crud)) return [];
+      const config = crud as Record<string, unknown>;
+      const configured = config["operations"];
+      const name = nodeName(model);
+      if (config["enabled"] !== true || !name || !configured || typeof configured !== "object" || Array.isArray(configured)) return [];
+      return operations
+        .filter((operation) => (configured as Record<string, unknown>)[operation] === true)
+        .map((operation) => {
+          const schema = operation === "delete"
+            ? "z.void()"
+            : operation === "list"
+              ? `${name}CollectionResponseSchema`
+              : `${name}ResponseSchema`;
+          return {
+            name: `crud.${name}.${operation}`,
+            exportName: exportName(`crud.${name}.${operation}`),
+            responses: [{ status: operation === "create" ? 201 : operation === "delete" ? 204 : 200, schema, references: [] }],
+            schemaReferences: schema.startsWith("z.") ? [] : [schema],
+          };
+        });
+    })
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
 export const routeOutputValidationTemplate = defineTemplate<RouteOutputValidationTemplateData[]>(
   (routes) => {
     const references = [
@@ -117,9 +147,9 @@ export function routeOutputValidationTemplateData(
   );
   const schemaNames = new Set(Object.keys(schemaDefinitions(graph)));
   const contextualNames = (names: ReadonlySet<string>): string[] =>
-    ["Schema", "InputSchema", "OutputSchema", "PersistenceSchema"].flatMap((suffix) =>
+    ["Schema", "InputSchema", "OutputSchema", "PersistenceSchema", "CreateSchema", "ReplaceSchema", "PatchSchema", "ResponseSchema"].flatMap((suffix) =>
       [...names].map((name) => `${name}${suffix}`),
-    );
+    ).concat([...modelNames].map((name) => `${name}CollectionResponseSchema`));
   const generatedSchemas = new Set([...contextualNames(modelNames), ...contextualNames(schemaNames)]);
   const routes = graph.nodes
     .filter((node) => node.type === "route")
@@ -169,7 +199,7 @@ export function routeOutputValidationTemplateData(
     .filter((route): route is RouteOutputValidationTemplateData => route !== undefined)
     .sort((left, right) => left.name.localeCompare(right.name));
 
-  return routes;
+  return [...routes, ...crudOutputValidationRoutes(graph)].sort((left, right) => left.name.localeCompare(right.name));
 }
 
 export function generateRouteOutputValidation(graph: ApplicationGraph): GeneratedFile | undefined {
