@@ -1,4 +1,5 @@
 import { defineMiddleware } from "./middleware.js";
+import type { CrudOperation } from "./crud.js";
 
 export const routeMethods = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 
@@ -13,6 +14,12 @@ export interface RouteDefinition {
   parameters?: RouteParameterDefinition[];
   responses?: import("./responses.js").RouteResponseDefinition[];
   middleware?: import("./middleware.js").MiddlewareDefinition[];
+  /** Model targeted by a generated CRUD route. */
+  model?: string;
+  /** CRUD operation represented by a generated route. */
+  operation?: CrudOperation;
+  /** True when the route was generated from model CRUD configuration. */
+  generated?: boolean;
 }
 
 export interface DefineRouteInput {
@@ -28,6 +35,9 @@ export interface DefineRouteInput {
   middleware?:
     | import("./middleware.js").MiddlewareDefinition[]
     | import("./middleware.js").DefineMiddlewareInput[];
+  model?: string;
+  operation?: CrudOperation;
+  generated?: boolean;
 }
 
 export function isRouteMethod(value: unknown): value is RouteMethod {
@@ -78,6 +88,9 @@ export function defineRoute(input: DefineRouteInput): RouteDefinition {
     ...(parameters.length === 0 ? {} : { parameters: parameters as RouteParameterDefinition[] }),
     ...(responses.length === 0 ? {} : { responses }),
     ...(middleware.length === 0 ? {} : { middleware }),
+    ...(input.model === undefined ? {} : { model: input.model }),
+    ...(input.operation === undefined ? {} : { operation: input.operation }),
+    ...(input.generated === undefined ? {} : { generated: input.generated }),
   };
 }
 import {

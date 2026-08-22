@@ -29,6 +29,7 @@ import { validateSchemaExpression } from "./schema.js";
 export const version = "0.1.0";
 
 export * from "./routes.js";
+export * from "./crud.js";
 export * from "./parameters.js";
 export * from "./responses.js";
 export * from "./middleware.js";
@@ -393,6 +394,9 @@ export interface ModelDefinition {
 
   /** Additional model metadata */
   metadata?: Record<string, unknown>;
+
+  /** Optional configuration for generated CRUD operations and list queries */
+  crud?: import("./crud.js").CrudDefinition;
 }
 
 export interface DefineModelInput {
@@ -403,6 +407,7 @@ export interface DefineModelInput {
   indexes?: readonly unknown[];
   constraints?: readonly unknown[];
   metadata?: Record<string, unknown>;
+  crud?: import("./crud.js").CrudDefinition;
 }
 
 export interface ApplicationDefinition {
@@ -453,6 +458,7 @@ export function defineModel(input: DefineModelInput): ModelDefinition {
     indexes,
     constraints,
     metadata: input.metadata ?? {},
+    ...(input.crud === undefined ? {} : { crud: input.crud }),
   };
 }
 export interface ValidationIssue {
