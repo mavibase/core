@@ -3,6 +3,7 @@ import type { DatabaseSchemaDefinition } from "@mavibase/core";
 
 import {
   generatePostgreSQLMigration,
+  applyPostgreSQLMigration,
   planPostgreSQLMigration,
   PostgreSQLMigrationError,
 } from "./migration-generator.js";
@@ -75,5 +76,39 @@ describe("PostgreSQL migrations", () => {
     expect(artifact.content.indexOf('CREATE TABLE "posts"')).toBeLessThan(
       artifact.content.indexOf('CREATE INDEX "posts_id_idx"'),
     );
+  });
+
+  it("applies a migration transactionally", async () => {
+    const current = {
+      ...previous,
+      version: "1.3.0",
+      tables: [{ ...previous.tables[0]!, columns: [...previous.tables[0]!.columns, { name: "active", type: "boolean" as const }] }],
+    };
+    const plan = planPostgreSQLMigration(previous, current);
+    const queries: string[] = [];
+    const result = await applyPostgreSQLMigration(plan, { query: async (sql) => { queries.push(sql); } });
+
+    expect(result).toEqual({ applied: true, operationCount: 1 });
+    expect(queries[0]).toBe("BEGIN");
+    expect(queries[1]).toContain('ALTER TABLE "users" ADD COLUMN "active" BOOLEAN;');
+    expect(queries[2]).toBe("COMMIT");
+  });
+
+  it("rolls back when applying a migration fails", async () => {
+    const current = {
+      ...previous,
+      version: "1.4.0",
+      tables: [{ ...previous.tables[0]!, columns: [...previous.tables[0]!.columns, { name: "active", type: "boolean" as const }] }],
+    };
+    const plan = planPostgreSQLMigration(previous, current);
+    const queries: string[] = [];
+    await expect(applyPostgreSQLMigration(plan, {
+      query: async (sql) => {
+        queries.push(sql);
+        if (sql !== "BEGIN" && sql !== "ROLLBACK") throw new Error("database unavailable");
+      },
+    })).rejects.toThrow("database unavailable");
+
+    expect(queries).toEqual(["BEGIN", expect.stringContaining("ALTER TABLE"), "ROLLBACK"]);
   });
 });
