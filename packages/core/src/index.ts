@@ -25,6 +25,7 @@ import type { StructuredConstraint } from "./validation.js";
 import { validateStructuredConstraints } from "./validation.js";
 import type { SchemaExpression } from "./schema.js";
 import { validateSchemaExpression } from "./schema.js";
+import { validateCrudDefinition } from "./crud.js";
 
 export const version = "0.1.0";
 
@@ -833,6 +834,18 @@ export function validateDefinition(definition: unknown): ValidationIssue[] {
       });
     }
     const fieldEntries = isRecord(fields) ? Object.entries(fields) : [];
+
+    const crud = modelObj["crud"];
+    if (crud !== undefined) {
+      const modelFieldNames = new Set(fieldEntries.map(([fieldName]) => fieldName));
+      issues.push(
+        ...validateCrudDefinition(
+          crud,
+          modelFieldNames,
+          `models.${String(modelName)}.crud`,
+        ),
+      );
+    }
 
     for (const [name, fieldDef] of fieldEntries) {
       const fieldType =
