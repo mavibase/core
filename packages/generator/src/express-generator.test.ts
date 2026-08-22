@@ -42,6 +42,7 @@ describe("Express CRUD generator", () => {
     expect(controllers?.content).toContain("const input = parseCrudUserUpdateRequest");
     expect(controllers?.content).toContain('import { createApiError } from "./api-errors.js";');
     expect(controllers?.content).toContain('if (result === undefined || result === null) throw createApiError(404, "NOT_FOUND", "Resource not found.");');
+    expect(controllers?.content).toContain('if (result !== true) throw createApiError(404, "NOT_FOUND", "Resource not found.");');
     expect(controllers?.content).toContain("page: input.query.page as number");
     expect(controllers?.content).toContain("limit: input.query.limit as number");
     expect(controllers?.content).toContain("body: input.body as Record<string, unknown>");
@@ -56,6 +57,7 @@ describe("Express CRUD generator", () => {
     expect(repositories?.content).toContain("replace(input: CrudReplaceInput): Promise<unknown>");
     expect(repositories?.content).toContain("export interface CrudPatchInput extends CrudRequestInput");
     expect(repositories?.content).toContain("update(input: CrudPatchInput): Promise<unknown>");
+    expect(repositories?.content).toContain("delete(input: CrudRequestInput): Promise<boolean>");
     expect(repositories?.content).toContain("totalPages: number");
     expect(routes?.content).toContain('app.get("/users"');
     expect(routes?.content).toContain('app.patch("/users/:id"');

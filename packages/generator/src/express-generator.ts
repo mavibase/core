@@ -150,11 +150,14 @@ function controllerContent(models: readonly CrudModel[]): string {
             ? `      const result = await deps.repositories.${property}.create({ ...input, body: input.body as Record<string, unknown> });`
             : operation === "replace"
               ? `      const result = await deps.repositories.${property}.replace({ ...input, body: input.body as Record<string, unknown> });`
-              : operation === "update"
+          : operation === "update"
                 ? `      const result = await deps.repositories.${property}.update({ ...input, body: input.body as Record<string, unknown> });`
                 : `      const result = await deps.repositories.${property}.${operation}(input);`,
         ...(["get", "replace", "update"].includes(operation)
           ? [`      if (result === undefined || result === null) throw createApiError(404, "NOT_FOUND", "Resource not found.");`]
+          : []),
+        ...(operation === "delete"
+          ? [`      if (result !== true) throw createApiError(404, "NOT_FOUND", "Resource not found.");`]
           : []),
         operation === "delete"
           ? `      response.status(${status}).send();`
@@ -221,8 +224,10 @@ function repositoryContent(models: readonly CrudModel[]): string {
             ? "  create(input: CrudCreateInput): Promise<unknown>;"
             : operation === "replace"
               ? "  replace(input: CrudReplaceInput): Promise<unknown>;"
-              : operation === "update"
+          : operation === "update"
                 ? "  update(input: CrudPatchInput): Promise<unknown>;"
+                : operation === "delete"
+                  ? "  delete(input: CrudRequestInput): Promise<boolean>;"
                 : `  ${operation}(input: CrudRequestInput): Promise<unknown>;`,
       );
     }
