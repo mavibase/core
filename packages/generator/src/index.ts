@@ -17,6 +17,7 @@ import { generateRouteRegistration } from "./route-registration-generator.js";
 import { generateRouteMiddleware } from "./route-middleware-generator.js";
 import { generateApiErrors } from "./api-error-generator.js";
 import { generateOpenApiDocument } from "./openapi-generator.js";
+import { backendFrameworkFromGraph, createExpressCrudArtifacts } from "./express-generator.js";
 import {
   databaseProviderFromGraph,
   generateDatabaseArtifacts,
@@ -72,6 +73,9 @@ function structuredArtifact(artifact: GeneratedFile): GeneratedFile {
     "route-responses.ts": "routes/responses.ts",
     "route-output-validation.ts": "routes/output-validation.ts",
     "route-handlers.ts": "controllers/index.ts",
+    "express-crud-controllers.ts": "controllers/crud.ts",
+    "express-crud-repositories.ts": "repositories/index.ts",
+    "express-crud-routes.ts": "routes/crud.ts",
     "route-registration.ts": "routes/registration.ts",
     "route-middleware.ts": "middleware/index.ts",
     "api-errors.ts": "errors/index.ts",
@@ -113,6 +117,12 @@ function structuredArtifact(artifact: GeneratedFile): GeneratedFile {
   if (artifact.path === "route-registration.ts") {
     content = content.replaceAll('from "./route-handlers.js"', 'from "../controllers/index.js"');
     content = content.replaceAll('from "./route-middleware.js"', 'from "../middleware/index.js"');
+  }
+  if (artifact.path === "express-crud-controllers.ts") {
+    content = content.replaceAll('from "./express-crud-repositories.js"', 'from "../repositories/index.js"');
+  }
+  if (artifact.path === "express-crud-routes.ts") {
+    content = content.replaceAll('from "./express-crud-controllers.js"', 'from "../controllers/crud.js"');
   }
 
   return { path, content };
@@ -211,6 +221,18 @@ export function generate(graph: ApplicationGraph, options?: GenerateOptions): Ge
     artifacts.push(routeMiddlewareFile);
   }
 
+  const backendFramework = options?.framework ?? backendFrameworkFromGraph(graph);
+  if (backendFramework === "express") {
+    artifacts.push(
+      ...createExpressCrudArtifacts({
+        graph,
+        framework: backendFramework,
+        outDir: options?.outDir ?? "generated",
+        ...(options?.database?.provider === undefined ? {} : { databaseProvider: options.database.provider }),
+      }),
+    );
+  }
+
   const apiErrorsFile = generateApiErrors(graph);
 
   if (apiErrorsFile) {
@@ -293,6 +315,7 @@ export * from "./route-handler-generator.js";
 export * from "./route-registration-generator.js";
 export * from "./route-middleware-generator.js";
 export * from "./generator-interfaces.js";
+export * from "./express-generator.js";
 export * from "./api-error-generator.js";
 export * from "./openapi-generator.js";
 export * from "./schema-normalizer.js";

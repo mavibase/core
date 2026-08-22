@@ -439,6 +439,9 @@ export function buildGraph(definition: ApplicationDefinition): ApplicationGraph 
         ...(route.parameters === undefined ? {} : { parameters: route.parameters }),
         ...(route.responses === undefined ? {} : { responses: route.responses }),
         ...(route.middleware === undefined ? {} : { middleware: route.middleware }),
+        ...(route.model === undefined ? {} : { model: route.model }),
+        ...(route.operation === undefined ? {} : { operation: route.operation }),
+        ...(route.generated === undefined ? {} : { generated: route.generated }),
       }),
     );
     edges.push(createEdge(appId, routeId, "contains"));
@@ -450,6 +453,7 @@ export function buildGraph(definition: ApplicationDefinition): ApplicationGraph 
     nodes.push(
       createNode("model", modelId, {
         name: model.name,
+        ...(model.crud === undefined ? {} : { crud: model.crud }),
         ...(model.indexes && model.indexes.length > 0 ? { indexes: model.indexes } : {}),
         ...(model.constraints && model.constraints.length > 0
           ? { constraints: model.constraints }
