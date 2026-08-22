@@ -19,7 +19,7 @@ describe("Express CRUD generator", () => {
         fields: { id: field.uuid().primary(), email: field.string().required() },
         crud: {
           enabled: true,
-          operations: { list: true, get: true, create: true, update: true, delete: true },
+          operations: { list: true, get: true, create: true, replace: true, update: true, delete: true },
         },
       })],
     });
@@ -45,11 +45,17 @@ describe("Express CRUD generator", () => {
     expect(controllers?.content).toContain("page: input.query.page as number");
     expect(controllers?.content).toContain("limit: input.query.limit as number");
     expect(controllers?.content).toContain("body: input.body as Record<string, unknown>");
+    expect(controllers?.content).toContain("createReplaceUserController");
+    expect(controllers?.content).toContain("createUpdateUserController");
     expect(repositories?.content).toContain("export interface UserRepository");
     expect(repositories?.content).toContain("export interface CrudListInput extends CrudRequestInput");
     expect(repositories?.content).toContain("list(input: CrudListInput): Promise<CrudListResult>");
     expect(repositories?.content).toContain("export interface CrudCreateInput extends CrudRequestInput");
     expect(repositories?.content).toContain("create(input: CrudCreateInput): Promise<unknown>");
+    expect(repositories?.content).toContain("export interface CrudReplaceInput extends CrudRequestInput");
+    expect(repositories?.content).toContain("replace(input: CrudReplaceInput): Promise<unknown>");
+    expect(repositories?.content).toContain("export interface CrudPatchInput extends CrudRequestInput");
+    expect(repositories?.content).toContain("update(input: CrudPatchInput): Promise<unknown>");
     expect(repositories?.content).toContain("totalPages: number");
     expect(routes?.content).toContain('app.get("/users"');
     expect(routes?.content).toContain('app.patch("/users/:id"');

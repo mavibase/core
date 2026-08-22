@@ -148,8 +148,12 @@ function controllerContent(models: readonly CrudModel[]): string {
           ? `      const result = await deps.repositories.${property}.list({ ...input, page: input.query.page as number, limit: input.query.limit as number });`
           : operation === "create"
             ? `      const result = await deps.repositories.${property}.create({ ...input, body: input.body as Record<string, unknown> });`
-            : `      const result = await deps.repositories.${property}.${operation}(input);`,
-        ...(operation === "get"
+            : operation === "replace"
+              ? `      const result = await deps.repositories.${property}.replace({ ...input, body: input.body as Record<string, unknown> });`
+              : operation === "update"
+                ? `      const result = await deps.repositories.${property}.update({ ...input, body: input.body as Record<string, unknown> });`
+                : `      const result = await deps.repositories.${property}.${operation}(input);`,
+        ...(["get", "replace", "update"].includes(operation)
           ? [`      if (result === undefined || result === null) throw createApiError(404, "NOT_FOUND", "Resource not found.");`]
           : []),
         operation === "delete"
@@ -184,6 +188,14 @@ function repositoryContent(models: readonly CrudModel[]): string {
     "  body: Record<string, unknown>;",
     "}",
     "",
+    "export interface CrudReplaceInput extends CrudRequestInput {",
+    "  body: Record<string, unknown>;",
+    "}",
+    "",
+    "export interface CrudPatchInput extends CrudRequestInput {",
+    "  body: Record<string, unknown>;",
+    "}",
+    "",
     "export interface CrudPagination {",
     "  page: number;",
     "  limit: number;",
@@ -207,7 +219,11 @@ function repositoryContent(models: readonly CrudModel[]): string {
           ? "  list(input: CrudListInput): Promise<CrudListResult>;"
           : operation === "create"
             ? "  create(input: CrudCreateInput): Promise<unknown>;"
-            : `  ${operation}(input: CrudRequestInput): Promise<unknown>;`,
+            : operation === "replace"
+              ? "  replace(input: CrudReplaceInput): Promise<unknown>;"
+              : operation === "update"
+                ? "  update(input: CrudPatchInput): Promise<unknown>;"
+                : `  ${operation}(input: CrudRequestInput): Promise<unknown>;`,
       );
     }
     lines.push("}", "");
