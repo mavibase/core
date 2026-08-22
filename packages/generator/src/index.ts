@@ -76,6 +76,7 @@ function structuredArtifact(artifact: GeneratedFile): GeneratedFile {
     "express-crud-controllers.ts": "controllers/crud.ts",
     "express-crud-repositories.ts": "repositories/index.ts",
     "express-crud-routes.ts": "routes/crud.ts",
+    "express-crud-extension.md": "mavibase/crud-extension.md",
     "route-registration.ts": "routes/registration.ts",
     "route-middleware.ts": "middleware/index.ts",
     "api-errors.ts": "errors/index.ts",

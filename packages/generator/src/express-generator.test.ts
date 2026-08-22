@@ -29,10 +29,12 @@ describe("Express CRUD generator", () => {
     const controllers = result.artifacts.find((artifact) => artifact.path === "controllers/crud.ts");
     const repositories = result.artifacts.find((artifact) => artifact.path === "repositories/index.ts");
     const routes = result.artifacts.find((artifact) => artifact.path === "routes/crud.ts");
+    const extensionDocs = result.artifacts.find((artifact) => artifact.path === "mavibase/crud-extension.md");
 
     expect(paths).toContain("controllers/crud.ts");
     expect(paths).toContain("repositories/index.ts");
     expect(paths).toContain("routes/crud.ts");
+    expect(paths).toContain("mavibase/crud-extension.md");
     expect(controllers?.content).toContain("createListUserController");
     expect(controllers?.content).toContain("repositories/index.js");
     expect(repositories?.content).toContain("export interface UserRepository");
@@ -40,6 +42,9 @@ describe("Express CRUD generator", () => {
     expect(routes?.content).toContain('app.get("/users"');
     expect(routes?.content).toContain('app.patch("/users/:id"');
     expect(routes?.content).toContain('app.delete("/users/:id"');
+    expect(routes?.content).toContain("overrides.user?.list");
+    expect(routes?.content).toContain("CrudRouteOverrides");
+    expect(extensionDocs?.content).toContain("developer-owned file outside the generated directory");
   });
 
   it("does not generate CRUD boundaries for disabled or unconfigured models", () => {
@@ -57,6 +62,7 @@ describe("Express CRUD generator", () => {
     expect(paths).not.toContain("controllers/crud.ts");
     expect(paths).not.toContain("repositories/index.ts");
     expect(paths).not.toContain("routes/crud.ts");
+    expect(paths).not.toContain("mavibase/crud-extension.md");
   });
 
   it("does not emit Express CRUD output for another backend framework", () => {

@@ -124,6 +124,8 @@ function controllerContent(models: readonly CrudModel[]): string {
     'import type { NextFunction, Request, Response } from "express";',
     'import type { CrudRepositories } from "./express-crud-repositories.js";',
     "",
+    "export type CrudController = (request: Request, response: Response, next: NextFunction) => Promise<void>;",
+    "",
     "export interface CrudControllerDependencies {",
     "  repositories: CrudRepositories;",
     "}",
@@ -195,13 +197,19 @@ function routeContent(models: readonly CrudModel[]): string {
     'import {',
     ...models.flatMap((model) => model.operations.map((operation) => `  ${operationControllerName(model, operation)},`)),
     '} from "./express-crud-controllers.js";',
-    'import type { CrudControllerDependencies } from "./express-crud-controllers.js";',
+    'import type { CrudController, CrudControllerDependencies } from "./express-crud-controllers.js";',
     "",
-    "export function registerCrudRoutes(app: Express, deps: CrudControllerDependencies): void {",
+    "export type CrudControllerOverrides = Partial<Record<\"list\" | \"get\" | \"create\" | \"replace\" | \"update\" | \"delete\", CrudController>>;",
+    "",
+    "export interface CrudRouteOverrides {",
+    ...models.map((model) => `  ${propertyName(model.name)}?: CrudControllerOverrides;`),
+    "}",
+    "",
+    "export function registerCrudRoutes(app: Express, deps: CrudControllerDependencies, overrides: CrudRouteOverrides = {}): void {",
   ];
   for (const model of models) {
     for (const operation of model.operations) {
-      lines.push(`  app.${operationMethod(operation)}(${JSON.stringify(operationPath(model, operation))}, ${operationControllerName(model, operation)}(deps));`);
+      lines.push(`  app.${operationMethod(operation)}(${JSON.stringify(operationPath(model, operation))}, overrides.${propertyName(model.name)}?.${operation} ?? ${operationControllerName(model, operation)}(deps));`);
     }
   }
   lines.push("}", "");
@@ -247,11 +255,17 @@ export const expressCrudRouteRegistrationGenerator = component(
   routeContent,
 );
 
+const extensionDocumentation: GeneratedFile = {
+  path: "express-crud-extension.md",
+  content: `# Extending generated Express CRUD\n\nGenerated CRUD files are replaceable infrastructure. Do not edit them directly.\n\nCreate a developer-owned file outside the generated directory, for example \`src/mavibase/crud-extensions.ts\`, and provide custom repositories or controllers when wiring the generated routes:\n\n\`\`\`ts\nimport type { CrudRepositories } from "../generated/repositories/index.js";\nimport type { CrudRouteOverrides } from "../generated/routes/crud.js";\n\nexport const repositories: CrudRepositories = {\n  // Implement the generated repository methods here.\n};\n\nexport const controllers: CrudRouteOverrides = {\n  // Override only the operations that need custom behavior.\n};\n\`\`\`\n\nPass these values to \`registerCrudRoutes(app, { repositories }, controllers)\`. Mavibase does not generate or overwrite files outside its configured generated directory.\n`,
+};
+
 export function createExpressCrudArtifacts(context: GeneratorContext): readonly GeneratedFile[] {
   if (!supportsExpress(context)) return [];
-  return [
+  const artifacts = [
     ...expressControllerGenerator.generate(context),
     ...expressRepositoryGenerator.generate(context),
     ...expressCrudRouteRegistrationGenerator.generate(context),
   ];
+  return artifacts.length === 0 ? [] : [...artifacts, extensionDocumentation];
 }
